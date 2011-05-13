@@ -17,7 +17,7 @@ Url: https://launchpad.net/lightdm
 Source: %name-%version.tar
 Source1: %name.conf
 
-Requires: %name-greeter = %version-%release
+Requires: %name-greeter
 
 BuildRequires: gcc-c++ intltool gnome-common
 BuildRequires: glib2-devel libgio-devel >= 2.26
