@@ -1,2 +1,2 @@
-tar: lightdm-@version@:.
+tar: v@version@:.
 copy: *.conf
