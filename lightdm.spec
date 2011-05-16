@@ -159,8 +159,10 @@ This package provides a Vala-based LightDM greeter engine.
 %install
 %make_install DESTDIR=%buildroot install
 
-mkdir -p %buildroot%_sysconfdir/X11/%name/sessions
-mkdir -p %buildroot%_sysconfdir/X11/wms-methods.d
+#mkdir -p %buildroot%_sysconfdir/X11/%name/sessions
+#mkdir -p %buildroot%_sysconfdir/X11/wms-methods.d
+mkdir -p %buildroot%_sysconfdir/X11/%name
+mkdir -p %buildroot%_sysconfdir/pam.d
 mkdir -p %buildroot%_localstatedir/log/%name
 mkdir -p %buildroot%_localstatedir/cache/%name
 
