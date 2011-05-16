@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 0.3.3
-Release: alt1
+Release: alt2
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -16,6 +16,7 @@ Url: https://launchpad.net/lightdm
 
 Source: %name-%version.tar
 Source1: %name.conf
+Source2: %name.pam
 
 Requires: %name-greeter
 
@@ -163,8 +164,11 @@ mkdir -p %buildroot%_sysconfdir/X11/wms-methods.d
 mkdir -p %buildroot%_localstatedir/log/%name
 mkdir -p %buildroot%_localstatedir/cache/%name
 
-# install config
+# install lightdm config
 install -p -m 644 %SOURCE1 %buildroot%_sysconfdir/X11/%name/%name.conf
+
+# install pam config
+install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 
 # install external hook for update_wms
 #install -m755 %%SOURCE2 %buildroot%_sysconfdir/X11/wms-methods.d/%name
@@ -177,6 +181,7 @@ install -p -m 644 %SOURCE1 %buildroot%_sysconfdir/X11/%name/%name.conf
 %doc ChangeLog README COPYING
 %config %_sysconfdir/dbus-1/system.d/org.lightdm.LightDisplayManager.conf
 %config %_sysconfdir/X11/%name/%name.conf
+%config %_sysconfdir/pam.d/%name
 %_bindir/%name
 %_man1dir/%name.*
 %dir %_datadir/%name
@@ -184,7 +189,6 @@ install -p -m 644 %SOURCE1 %buildroot%_sysconfdir/X11/%name/%name.conf
 %dir %_libexecdir/%name
 %dir %_localstatedir/log/%name
 %attr(775, _ldm, _ldm) %dir %_localstatedir/cache/%name
-
 
 %files python-greeter
 %_libexecdir/%name/lightdm-example-python-gtk-greeter
@@ -231,6 +235,9 @@ install -p -m 644 %SOURCE1 %buildroot%_sysconfdir/X11/%name/%name.conf
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Mon May 16 2011 Alexey Shabalin <shaba@altlinux.ru> 0.3.3-alt2
+- add pam config file
+
 * Thu May 12 2011 Alexey Shabalin <shaba@altlinux.ru> 0.3.3-alt1
 - initial package
 

@@ -1,2 +1,3 @@
 tar: v@version@:.
 copy: *.conf
+copy: *.pam
