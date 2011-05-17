@@ -132,7 +132,7 @@ This package provides a Vala-based LightDM greeter engine.
 
 %prep
 %setup
-%patch1 -p2
+%patch1 -p1
 %__subst "s|moc |moc-qt4 |" liblightdm-qt/Makefile.am greeters/qt/Makefile.am
 
 %build
