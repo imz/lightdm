@@ -11,7 +11,7 @@ index e09aa34..7a31a88 100644
              g_signal_connect (G_OBJECT (display->priv->user_session), "exited", G_CALLBACK (user_session_exited_cb), display);
              g_signal_connect (G_OBJECT (display->priv->user_session), "terminated", G_CALLBACK (user_session_terminated_cb), display);
 diff --git a/src/session.c b/src/session.c
-index 1923de8..453ca1c 100644
+index 1923de8..d8c37af 100644
 --- a/src/session.c
 +++ b/src/session.c
 @@ -35,6 +35,9 @@ struct SessionPrivate
@@ -47,7 +47,7 @@ index 1923de8..453ca1c 100644
                                    session->priv->username,
                                    working_dir,
 -                                  session->priv->command,
-+                                  session->priv->name,
++                                  (session->priv->name ? session->priv->name : session->priv->command),
                                    create_pipe,
                                    &error);
      g_free (working_dir);
