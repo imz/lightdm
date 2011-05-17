@@ -1,3 +1,4 @@
 tar: v@version@:.
 copy: *.conf
 copy: *.pam
+copy: *.patch

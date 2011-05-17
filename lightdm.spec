@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 0.3.3
-Release: alt2
+Release: alt2.1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -17,6 +17,8 @@ Url: https://launchpad.net/lightdm
 Source: %name-%version.tar
 Source1: %name.conf
 Source2: %name.pam
+
+Patch1: lightdm-xsession-by-name.patch
 
 Requires: %name-greeter
 
@@ -130,6 +132,7 @@ This package provides a Vala-based LightDM greeter engine.
 
 %prep
 %setup
+%patch1 -p2
 %__subst "s|moc |moc-qt4 |" liblightdm-qt/Makefile.am greeters/qt/Makefile.am
 
 %build
@@ -237,6 +240,10 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Tue May 17 2011 Mykola Grechukh <gns@altlinux.ru> 0.3.3-alt2.1
+- hacked to run Xsession with session name not exec (it's ALT Linux
+  here, kids...)
+
 * Mon May 16 2011 Alexey Shabalin <shaba@altlinux.ru> 0.3.3-alt2
 - add pam config file
 

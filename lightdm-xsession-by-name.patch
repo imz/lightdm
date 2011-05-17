@@ -1,0 +1,68 @@
+diff --git a/src/display.c b/src/display.c
+index e09aa34..7a31a88 100644
+--- a/src/display.c
++++ b/src/display.c
+@@ -544,6 +544,7 @@ start_user_session (Display *display, const gchar *session, const gchar *languag
+             display->priv->user_session = session_new ();
+             session_set_username (display->priv->user_session, pam_session_get_username (display->priv->user_pam_session));
+             session_set_command (display->priv->user_session, session_command);
++            session_set_name (display->priv->user_session, session);
+ 
+             g_signal_connect (G_OBJECT (display->priv->user_session), "exited", G_CALLBACK (user_session_exited_cb), display);
+             g_signal_connect (G_OBJECT (display->priv->user_session), "terminated", G_CALLBACK (user_session_terminated_cb), display);
+diff --git a/src/session.c b/src/session.c
+index 1923de8..453ca1c 100644
+--- a/src/session.c
++++ b/src/session.c
+@@ -35,6 +35,9 @@ struct SessionPrivate
+     /* Command to run for this session */
+     gchar *command;
+ 
++    /* Session name*/
++    gchar *name;
++
+     /* X authorization */
+     XAuthorization *authorization;
+     gchar *authorization_path;
+@@ -72,6 +75,17 @@ session_get_command (Session *session)
+ {
+     return session->priv->command;
+ }
++void
++session_set_name (Session *session, const gchar *name)
++{
++    session->priv->name = g_strdup (name);
++}
++
++const gchar *
++session_get_name (Session *session)
++{
++    return session->priv->name;
++}
+ 
+ void
+ session_set_authorization (Session *session, XAuthorization *authorization, const gchar *path)
+@@ -142,7 +156,7 @@ session_start (Session *session, gboolean create_pipe)
+     result = child_process_start (CHILD_PROCESS (session),
+                                   session->priv->username,
+                                   working_dir,
+-                                  session->priv->command,
++                                  session->priv->name,
+                                   create_pipe,
+                                   &error);
+     g_free (working_dir);
+diff --git a/src/session.h b/src/session.h
+index 8524a86..cc25304 100644
+--- a/src/session.h
++++ b/src/session.h
+@@ -45,6 +45,10 @@ void session_set_command (Session *session, const gchar *command);
+ 
+ const gchar *session_get_command (Session *session);
+ 
++void session_set_name (Session *session, const gchar *name);
++
++const gchar *session_get_name (Session *session);
++
+ void session_set_authorization (Session *session, XAuthorization *authorization, const gchar *path);
+ 
+ XAuthorization *session_get_authorization (Session *session);
