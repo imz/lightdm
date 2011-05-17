@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 0.3.3
-Release: alt2.1
+Release: alt2.2
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -240,7 +240,7 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 %_datadir/gtk-doc/html/*
 
 %changelog
-* Tue May 17 2011 Mykola Grechukh <gns@altlinux.ru> 0.3.3-alt2.1
+* Tue May 17 2011 Mykola Grechukh <gns@altlinux.ru> 0.3.3-alt2.2
 - hacked to run Xsession with session name not exec (it's ALT Linux
   here, kids...)
 
