@@ -1,13 +1,12 @@
 %define _libexecdir %_prefix/libexec
 %define _localstatedir %_var
 %def_enable gobject
-%def_enable vala
 %def_enable introspection
 %def_enable qt
 
 Name: lightdm
-Version: 0.3.3
-Release: alt2.2
+Version: 0.9.4
+Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -18,20 +17,18 @@ Source: %name-%version.tar
 Source1: %name.conf
 Source2: %name.pam
 
-Patch1: lightdm-xsession-by-name.patch
+Patch1: lightdm-0.9.4-alt-fix-linking.patch
 
 Requires: %name-greeter
 
 BuildRequires: gcc-c++ intltool gnome-common
 BuildRequires: glib2-devel libgio-devel >= 2.26
-BuildRequires: libgtk+2-devel
+BuildRequires: libgtk+3-devel
 BuildRequires: libxcb-devel libXdmcp-devel
 BuildRequires: libdbus-glib-devel
 BuildRequires: gtk-doc
 BuildRequires: libpam-devel
-BuildRequires: python-modules-compiler
 %{?_enable_gobject:BuildRequires: libxklavier-devel libX11-devel}
-%{?_enable_vala:BuildRequires: vala-tools libvala-devel}
 %{?_enable_introspection:BuildRequires: gobject-introspection-devel}
 %{?_enable_qt:BuildRequires: libqt4-devel}
 
@@ -111,29 +108,11 @@ Provides: %name-greeter
 %description qt-greeter
 This package provides a Qt-based LightDM greeter engine.
 
-%package python-greeter
-Summary: LightDM PyGObject Greeter
-Group: Graphical desktop/Other
-BuildArch: noarch
-Requires: %name = %version-%release
-Provides: %name-greeter
-
-%description python-greeter
-This package provides a PyGObject-based LightDM greeter engine.
-
-%package vala-greeter
-Summary: LightDM Vala Greeter
-Group: Graphical desktop/Other
-Requires: %name = %version-%release
-Provides: %name-greeter
-
-%description vala-greeter
-This package provides a Vala-based LightDM greeter engine.
-
 %prep
 %setup
 %patch1 -p1
-%__subst "s|moc |moc-qt4 |" liblightdm-qt/Makefile.am greeters/qt/Makefile.am
+%__subst "s|moc |moc-qt4 |" liblightdm-qt/Makefile.am greeters/qt/Makefile.am tests/src/Makefile.am
+%__subst "s|uic |uic-qt4 |" liblightdm-qt/Makefile.am greeters/qt/Makefile.am tests/src/Makefile.am
 
 %build
 %autoreconf
@@ -147,15 +126,9 @@ This package provides a Vala-based LightDM greeter engine.
 %if_enabled qt
 	--enable-liblightdm-qt \
 %endif
-	--with-config-file=%_sysconfdir/X11/%name/%name.conf \
-	--with-log-dir=%_localstatedir/log/%name \
-	--with-xauth-dir=%_localstatedir/run/%name/authority \
-	--with-default-pam-service=%name \
+	--with-user-session=default \
 	--libexecdir=%_libexecdir/%name \
 	--with-greeter-user=_ldm
-
-#	--with-cache-dir=%_localstatedir/cache/%name
-#	--with-default-session=default \
 
 %make_build
 
@@ -195,9 +168,6 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 %dir %_localstatedir/log/%name
 %attr(775, _ldm, _ldm) %dir %_localstatedir/cache/%name
 
-%files python-greeter
-%_libexecdir/%name/lightdm-example-python-gtk-greeter
-
 %if_enabled gobject
 %files -n liblightdm-gobject
 %_libdir/liblightdm-gobject-0.so.*
@@ -206,17 +176,12 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 %_libexecdir/%name/lightdm-example-gtk-greeter
 %_datadir/lightdm-example-gtk-greeter/greeter.ui
 
-%if_enabled vala
-%files vala-greeter
-%_libexecdir/%name/lightdm-example-vala-gtk-greeter
-
 %if_enabled introspection
 %files gir
 %_typelibdir/*.typelib
 
 %files gir-devel
 %_girdir/*.gir
-%endif
 %endif
 %endif
 
@@ -240,6 +205,9 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Mon Aug 29 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.4-alt1
+- 0.9.4
+
 * Tue May 17 2011 Mykola Grechukh <gns@altlinux.ru> 0.3.3-alt2.2
 - hacked to run Xsession with session name not exec (it's ALT Linux
   here, kids...)
