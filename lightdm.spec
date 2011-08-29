@@ -127,7 +127,7 @@ This package provides a Qt-based LightDM greeter engine.
 	--enable-liblightdm-qt \
 %endif
 	--with-user-session=default \
-	--libexecdir=%_libexecdir/%name \
+	--libexecdir=%_libexecdir \
 	--with-greeter-user=_ldm
 
 %make_build
@@ -151,30 +151,38 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 # install external hook for update_wms
 #install -m755 %%SOURCE2 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
+%find_lang %name
+
 %pre
 %_sbindir/groupadd -r -f _ldm >/dev/null 2>&1 || :
 %_sbindir/useradd -M -r -d %_localstatedir/lib/ldm -s /bin/false -c "LightDM daemon" -g _ldm _ldm >/dev/null 2>&1 || :
 
-%files
-%doc ChangeLog README COPYING
-%config %_sysconfdir/dbus-1/system.d/org.lightdm.LightDisplayManager.conf
-%config %_sysconfdir/X11/%name/%name.conf
-%config %_sysconfdir/pam.d/%name
-%_bindir/%name
+%files -f %name.lang
+%doc AUTHORS COPYING NEWS README
+%config %_sysconfdir/dbus-1/system.d/org.freedesktop.DisplayManager.conf
+%dir %_sysconfdir/%name
+%config(noreplace) %_sysconfdir/%name/%name.conf
+%config(noreplace) %_sysconfdir/%name/keys.conf
+%config(noreplace) %_sysconfdir/%name/users.conf
+%config(noreplace) %_sysconfdir/pam.d/%name
+%_sbindir/%name
 %_man1dir/%name.*
-%dir %_datadir/%name
-%_datadir/%name/themes
-%dir %_libexecdir/%name
+%_bindir/dm-tool
+%dir %_datadir/xgreeters
+%_libexecdir/*
 %dir %_localstatedir/log/%name
-%attr(775, _ldm, _ldm) %dir %_localstatedir/cache/%name
+%attr(775,_ldm,_ldm) %dir %_localstatedir/cache/%name
+
 
 %if_enabled gobject
 %files -n liblightdm-gobject
-%_libdir/liblightdm-gobject-0.so.*
+%_libdir/liblightdm-gobject-?.so.*
 
 %files gtk-greeter
-%_libexecdir/%name/lightdm-example-gtk-greeter
-%_datadir/lightdm-example-gtk-greeter/greeter.ui
+%_sbindir/%name-gtk-greeter
+%_datadir/%name-gtk-greeter
+%_datadir/xgreeters/%name-gtk-greeter.desktop
+%config(noreplace) %_sysconfdir/%name/%name-gtk-greeter.conf
 
 %if_enabled introspection
 %files gir
@@ -187,19 +195,18 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 
 %if_enabled qt
 %files -n liblightdm-qt
-%_libdir/liblightdm-qt-0.so.*
+%_libdir/liblightdm-qt-?.so.*
 
 %files qt-greeter
-%_libexecdir/%name/lightdm-example-qt-greeter
+%_sbindir/%name-qt-greeter
+%_datadir/xgreeters/%name-qt-greeter.desktop
 %endif
 
 %files devel
 %_libdir/*.so
 %_includedir/*
 %_pkgconfigdir/*.pc
-%if_enabled vala
 %_datadir/vala/vapi/*.vapi
-%endif
 
 %files devel-doc
 %_datadir/gtk-doc/html/*
