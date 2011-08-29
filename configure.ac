@@ -84,12 +84,14 @@ compile_liblightdm_qt=no
 if test x"$enable_liblightdm_qt" = "xauto"; then
     PKG_CHECK_MODULES(LIBLIGHTDM_QT, [
         QtCore
+        QtGui
         QtDBus
         QtNetwork
     ], compile_liblightdm_qt=yes, compile_liblightdm_qt=no)
 elif test x"$enable_liblightdm_qt" = "xyes"; then
     PKG_CHECK_MODULES(LIBLIGHTDM_QT, [
         QtCore
+        QtGui
         QtDBus
         QtNetwork
     ])
