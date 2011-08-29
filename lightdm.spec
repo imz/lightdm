@@ -14,7 +14,6 @@ Url: https://launchpad.net/lightdm
 #To get source code use the command "bzr branch lp:lightdm"
 
 Source: %name-%version.tar
-Source1: %name.conf
 Source2: %name.pam
 
 Patch1: %name-%version-%release.patch
@@ -137,13 +136,10 @@ This package provides a Qt-based LightDM greeter engine.
 
 #mkdir -p %buildroot%_sysconfdir/X11/%name/sessions
 #mkdir -p %buildroot%_sysconfdir/X11/wms-methods.d
-mkdir -p %buildroot%_sysconfdir/X11/%name
 mkdir -p %buildroot%_sysconfdir/pam.d
 mkdir -p %buildroot%_localstatedir/log/%name
 mkdir -p %buildroot%_localstatedir/cache/%name
-
-# install lightdm config
-install -p -m 644 %SOURCE1 %buildroot%_sysconfdir/X11/%name/%name.conf
+mkdir -p %buildroot%_localstatedir/run/%name
 
 # install pam config
 install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
@@ -170,9 +166,9 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 %_bindir/dm-tool
 %dir %_datadir/xgreeters
 %_libexecdir/*
-%dir %_localstatedir/log/%name
+%attr(775,root,_ldm) %dir %_localstatedir/log/%name
 %attr(775,_ldm,_ldm) %dir %_localstatedir/cache/%name
-
+%ghost %attr(751,_ldm,_ldm) %dir %_localstatedir/run/%name
 
 %if_enabled gobject
 %files -n liblightdm-gobject
