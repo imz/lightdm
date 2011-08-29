@@ -1,5 +1,4 @@
 tar: v@version@:.
 diff: v@version@:. patches/alt-fixes:.
-copy: *.conf
 copy: *.pam
 copy: *.patch
