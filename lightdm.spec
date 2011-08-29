@@ -15,6 +15,7 @@ Url: https://launchpad.net/lightdm
 
 Source: %name-%version.tar
 Source2: %name.pam
+Source3: %name-autologin.pam
 
 Patch1: %name-%version-%release.patch
 
@@ -143,6 +144,7 @@ mkdir -p %buildroot%_localstatedir/run/%name
 
 # install pam config
 install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
+install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 
 # install external hook for update_wms
 #install -m755 %%SOURCE2 %buildroot%_sysconfdir/X11/wms-methods.d/%name
@@ -161,6 +163,7 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 %config(noreplace) %_sysconfdir/%name/keys.conf
 %config(noreplace) %_sysconfdir/%name/users.conf
 %config(noreplace) %_sysconfdir/pam.d/%name
+%config(noreplace) %_sysconfdir/pam.d/%name-autologin
 %_sbindir/%name
 %_man1dir/%name.*
 %_bindir/dm-tool
