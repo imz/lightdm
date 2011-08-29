@@ -17,7 +17,7 @@ Source: %name-%version.tar
 Source1: %name.conf
 Source2: %name.pam
 
-Patch1: lightdm-0.9.4-alt-fix-linking.patch
+Patch1: %name-%version-%release.patch
 
 Requires: %name-greeter
 
