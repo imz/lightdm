@@ -6,7 +6,7 @@
 
 Name: lightdm
 Version: 0.9.4
-Release: alt1
+Release: alt2
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -16,6 +16,7 @@ Url: https://launchpad.net/lightdm
 Source: %name-%version.tar
 Source2: %name.pam
 Source3: %name-autologin.pam
+Source4: %name.wms
 
 Patch1: %name-%version-%release.patch
 
@@ -135,8 +136,8 @@ This package provides a Qt-based LightDM greeter engine.
 %install
 %make_install DESTDIR=%buildroot install
 
-#mkdir -p %buildroot%_sysconfdir/X11/%name/sessions
-#mkdir -p %buildroot%_sysconfdir/X11/wms-methods.d
+mkdir -p %buildroot%_sysconfdir/%name/sessions
+mkdir -p %buildroot%_sysconfdir/X11/wms-methods.d
 mkdir -p %buildroot%_sysconfdir/pam.d
 mkdir -p %buildroot%_localstatedir/log/%name
 mkdir -p %buildroot%_localstatedir/cache/%name
@@ -148,7 +149,7 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 
 # install external hook for update_wms
-#install -m755 %%SOURCE2 %buildroot%_sysconfdir/X11/wms-methods.d/%name
+install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
 %find_lang %name
 
@@ -160,6 +161,7 @@ install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 %doc AUTHORS COPYING NEWS README
 %config %_sysconfdir/dbus-1/system.d/org.freedesktop.DisplayManager.conf
 %dir %_sysconfdir/%name
+%dir %_sysconfdir/%name/sessions
 %config(noreplace) %_sysconfdir/%name/%name.conf
 %config(noreplace) %_sysconfdir/%name/keys.conf
 %config(noreplace) %_sysconfdir/%name/users.conf
@@ -213,6 +215,9 @@ install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Fri Sep 02 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.4-alt2
+- add hook for wms-methods.d based on gdm
+
 * Mon Aug 29 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.4-alt1
 - 0.9.4
 

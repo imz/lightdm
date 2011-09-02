@@ -2,3 +2,4 @@ tar: v@version@:.
 diff: v@version@:. patches/alt-fixes:.
 copy: *.pam
 copy: *.patch
+copy: *.wms
