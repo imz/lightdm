@@ -141,6 +141,7 @@ mkdir -p %buildroot%_sysconfdir/pam.d
 mkdir -p %buildroot%_localstatedir/log/%name
 mkdir -p %buildroot%_localstatedir/cache/%name
 mkdir -p %buildroot%_localstatedir/run/%name
+mkdir -p %buildroot%_localstatedir/lib/ldm
 
 # install pam config
 install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
@@ -171,6 +172,7 @@ install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 %_libexecdir/*
 %attr(775,root,_ldm) %dir %_localstatedir/log/%name
 %attr(775,_ldm,_ldm) %dir %_localstatedir/cache/%name
+%attr(750,_ldm,_ldm) %dir %_localstatedir/lib/ldm
 %ghost %attr(751,_ldm,_ldm) %dir %_localstatedir/run/%name
 
 %if_enabled gobject
