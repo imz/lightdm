@@ -19,6 +19,7 @@
 #include "ldm-marshal.h"
 
 enum {
+    CONNECTED,
     START_AUTHENTICATION,
     START_SESSION,
     LAST_SIGNAL
@@ -113,12 +114,15 @@ int_length ()
 static void
 write_message (Greeter *greeter, guint8 *message, gsize message_length)
 {
+    GIOStatus status;
     GError *error = NULL;
-    if (g_io_channel_write_chars (greeter->priv->to_greeter_channel, (gchar *) message, message_length, NULL, &error) != G_IO_STATUS_NORMAL)
+
+    status = g_io_channel_write_chars (greeter->priv->to_greeter_channel, (gchar *) message, message_length, NULL, &error);
+    if (error)
         g_warning ("Error writing to greeter: %s", error->message);
-    else
-        g_debug ("Wrote %zi bytes to greeter", message_length);
     g_clear_error (&error);
+    if (status == G_IO_STATUS_NORMAL)
+        g_debug ("Wrote %zi bytes to greeter", message_length);
     g_io_channel_flush (greeter->priv->to_greeter_channel, NULL);
 }
 
@@ -194,6 +198,8 @@ handle_connect (Greeter *greeter, const gchar *version)
         write_string (message, MAX_MESSAGE_LENGTH, value, &offset);
     }
     write_message (greeter, message, offset);
+
+    g_signal_emit (greeter, signals[CONNECTED], 0);
 }
 
 static void
@@ -263,6 +269,7 @@ reset_session (Greeter *greeter)
 static void
 handle_login (Greeter *greeter, guint32 sequence_number, const gchar *username)
 {
+    gboolean result;
     GError *error = NULL;
 
     if (username[0] == '\0')
@@ -285,11 +292,11 @@ handle_login (Greeter *greeter, guint32 sequence_number, const gchar *username)
 
     g_signal_connect (G_OBJECT (greeter->priv->authentication), "got-messages", G_CALLBACK (pam_messages_cb), greeter);
     g_signal_connect (G_OBJECT (greeter->priv->authentication), "authentication-result", G_CALLBACK (authentication_result_cb), greeter);
-    if (!pam_session_authenticate (greeter->priv->authentication, &error))
-    {
+    result = pam_session_authenticate (greeter->priv->authentication, &error);
+    if (error)
         g_debug ("Failed to start authentication: %s", error->message);
+    if (!result)
         send_end_authentication (greeter, sequence_number, "", PAM_SYSTEM_ERR);
-    }
     g_clear_error (&error);
 }
 
@@ -379,9 +386,9 @@ handle_start_session (Greeter *greeter, const gchar *session)
     if (greeter->priv->guest_account_authenticated || pam_session_get_is_authenticated (greeter->priv->authentication))
     {
         if (session)
-            g_debug ("Start session %s", session);
+            g_debug ("Greeter requests session %s", session);
         else
-            g_debug ("Start default session");     
+            g_debug ("Greeter requests default session");     
         g_signal_emit (greeter, signals[START_SESSION], 0, session, &result);
     }
     else
@@ -468,7 +475,7 @@ read_cb (GIOChannel *source, GIOCondition condition, gpointer data)
                                       n_to_read - greeter->priv->n_read,
                                       &n_read,
                                       &error);
-    if (status != G_IO_STATUS_NORMAL)
+    if (error)
         g_warning ("Error reading from greeter: %s", error->message);
     g_clear_error (&error);
     if (status != G_IO_STATUS_NORMAL)
@@ -656,15 +663,14 @@ greeter_class_init (GreeterClass *klass)
     klass->start_session = greeter_real_start_session;
     object_class->finalize = greeter_finalize;
 
-    signals[START_SESSION] =
-        g_signal_new ("start-session",
+    signals[CONNECTED] =
+        g_signal_new ("connected",
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
-                      G_STRUCT_OFFSET (GreeterClass, start_session),
-                      g_signal_accumulator_true_handled,
-                      NULL,
-                      ldm_marshal_BOOLEAN__STRING,
-                      G_TYPE_BOOLEAN, 1, G_TYPE_STRING);
+                      G_STRUCT_OFFSET (GreeterClass, connected),
+                      NULL, NULL,
+                      g_cclosure_marshal_VOID__VOID,
+                      G_TYPE_NONE, 0);
 
     signals[START_AUTHENTICATION] =
         g_signal_new ("start-authentication",
@@ -675,6 +681,16 @@ greeter_class_init (GreeterClass *klass)
                       NULL,
                       ldm_marshal_OBJECT__STRING,
                       PAM_SESSION_TYPE, 1, G_TYPE_STRING);
+
+    signals[START_SESSION] =
+        g_signal_new ("start-session",
+                      G_TYPE_FROM_CLASS (klass),
+                      G_SIGNAL_RUN_LAST,
+                      G_STRUCT_OFFSET (GreeterClass, start_session),
+                      g_signal_accumulator_true_handled,
+                      NULL,
+                      ldm_marshal_BOOLEAN__STRING,
+                      G_TYPE_BOOLEAN, 1, G_TYPE_STRING);
 
     g_type_class_add_private (klass, sizeof (GreeterPrivate));
 }

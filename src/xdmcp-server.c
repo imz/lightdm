@@ -159,9 +159,9 @@ send_packet (GSocket *socket, GSocketAddress *address, XDMCPPacket *packet)
     {
         GError *error = NULL;
 
-        if (g_socket_send_to (socket, address, (gchar *) data, n_written, NULL, &error) < 0)
+        g_socket_send_to (socket, address, (gchar *) data, n_written, NULL, &error);
+        if (error)
             g_warning ("Error sending packet: %s", error->message);
-
         g_clear_error (&error);
     }
 }
@@ -269,28 +269,48 @@ handle_request (XDMCPServer *server, GSocket *socket, GSocketAddress *address, X
     guint8 *session_authorization_data = NULL;
     gsize session_authorization_data_length = 0;
     gchar **j;
-    GInetAddress *address4 = NULL, *address6 = NULL;
-    gchar *host, *display_number;
+    guint16 family;
+    GInetAddress *xserver_address = NULL;
+    gchar *display_number;
     XdmAuthKeyRec rho;
 
+    /* Try and find an IPv6 address */
     for (i = 0; i < packet->Request.n_connections; i++)
     {
-        XDMCPConnection *connection;
-
-        connection = &packet->Request.connections[i];
-        switch (connection->type)
+        XDMCPConnection *connection = &packet->Request.connections[i];
+        if (connection->type == XAUTH_FAMILY_INTERNET6 && connection->address.length == 16)
         {
-        case FamilyInternet:
-            if (connection->address.length == 4)
-                address4 = g_inet_address_new_from_bytes (connection->address.data, G_SOCKET_FAMILY_IPV4);
-            break;
-        /*case FamilyInternet6:
-            if (connection->address.length == 16)
-                address6 = g_inet_address_new_from_bytes (connection->address.data, G_SOCKET_FAMILY_IPV6);          
-            break;*/
+            family = connection->type;
+            xserver_address = g_inet_address_new_from_bytes (connection->address.data, G_SOCKET_FAMILY_IPV6);
+
+            /* We can't use link-local addresses, as we need to know what interface it is on */
+            if (g_inet_address_get_is_link_local (xserver_address))
+            {
+                g_object_unref (xserver_address);
+                xserver_address = NULL;
+            }
+            else
+                break;
         }
     }
-    if (!address4) // FIXME: && !address6)
+
+    /* If no IPv6 address, then try and find an IPv4 one */
+    if (!xserver_address)
+    {
+        for (i = 0; i < packet->Request.n_connections; i++)
+        {
+            XDMCPConnection *connection = &packet->Request.connections[i];
+            if (connection->type == XAUTH_FAMILY_INTERNET && connection->address.length == 4)
+            {
+                family = connection->type;
+                xserver_address = g_inet_address_new_from_bytes (connection->address.data, G_SOCKET_FAMILY_IPV4);
+                break;
+            }
+        }
+    }
+
+    /* Decline if haven't got an address we can connect on */
+    if (!xserver_address)
     {
         response = xdmcp_packet_alloc (XDMCP_Decline);
         response->Decline.status = g_strdup ("No valid address found");
@@ -349,7 +369,8 @@ handle_request (XDMCPServer *server, GSocket *socket, GSocketAddress *address, X
              break;
         }
     }
-  
+
+    /* Decline if don't support out authorization */
     if (!match_authorization)
     {
         response = xdmcp_packet_alloc (XDMCP_Decline);
@@ -395,28 +416,44 @@ handle_request (XDMCPServer *server, GSocket *socket, GSocketAddress *address, X
         XAuthority *auth;
 
         /* Data is the cookie */
-        auth = xauth_new_cookie (XAUTH_FAMILY_WILD, "", "");
+        auth = xauth_new_cookie (XAUTH_FAMILY_WILD, NULL, 0, "");
         authorization_data = xauth_copy_authorization_data (auth);
         authorization_data_length = xauth_get_authorization_data_length (auth);
         session_authorization_data = xauth_copy_authorization_data (auth);
         session_authorization_data_length = xauth_get_authorization_data_length (auth);
-      
+
         g_object_unref (auth);
     }
 
     session = add_session (server);
-    session->priv->address = address4;
-    session->priv->address6 = address6;
+    session->priv->address = xserver_address;
     session->priv->display_number = packet->Request.display_number;
-    host = g_inet_address_to_string (G_INET_ADDRESS (address4)); // FIXME: IPv6
     display_number = g_strdup_printf ("%d", packet->Request.display_number);
-    session->priv->authority = xauth_new (XAUTH_FAMILY_INTERNET, // FIXME: IPv6
-                                          host,
-                                          display_number,
-                                          authorization_name,
-                                          session_authorization_data,
-                                          session_authorization_data_length);
-    g_free (host);
+
+    /* We need to check if this is the loopback address and set the authority
+     * for a local connection if this is so as XCB treats "127.0.0.1" as local
+     * always */
+    if (g_inet_address_get_is_loopback (xserver_address))
+    {
+        gchar hostname[1024];
+        gethostname (hostname, 1024);
+
+        session->priv->authority = xauth_new (XAUTH_FAMILY_LOCAL,
+                                              (guint8 *) hostname,
+                                              strlen (hostname),
+                                              display_number,
+                                              authorization_name,
+                                              session_authorization_data,
+                                              session_authorization_data_length);
+    }
+    else
+        session->priv->authority = xauth_new (family,
+                                              g_inet_address_to_bytes (G_INET_ADDRESS (xserver_address)),
+                                              g_inet_address_get_native_size (G_INET_ADDRESS (xserver_address)),
+                                              display_number,
+                                              authorization_name,
+                                              session_authorization_data,
+                                              session_authorization_data_length);
     g_free (display_number);
 
     response = xdmcp_packet_alloc (XDMCP_Accept);
@@ -435,60 +472,59 @@ static void
 handle_manage (XDMCPServer *server, GSocket *socket, GSocketAddress *address, XDMCPPacket *packet)
 {
     XDMCPSession *session;
+    gboolean result;
 
     session = get_session (server, packet->Manage.session_id);
-    if (session)
-    {
-        gboolean result;
-
-        /* Ignore duplicate requests */
-        if (session->priv->started)
-        {
-            if (session->priv->display_number != packet->Manage.display_number ||
-                strcmp (session->priv->display_class, packet->Manage.display_class) != 0)
-                g_debug ("Ignoring duplicate Manage with different data");
-            return;
-        }
-
-        /* Reject if has changed display number */
-        if (packet->Manage.display_number != session->priv->display_number)
-        {
-            XDMCPPacket *response;
-
-            g_debug ("Received Manage for display number %d, but Request was %d", packet->Manage.display_number, session->priv->display_number);
-            response = xdmcp_packet_alloc (XDMCP_Refuse);
-            response->Refuse.session_id = packet->Manage.session_id;
-            send_packet (socket, address, response);
-            xdmcp_packet_free (response);
-        }
-
-        session->priv->display_class = g_strdup (packet->Manage.display_class);
-
-        g_signal_emit (server, signals[NEW_SESSION], 0, session, &result);
-        if (result)
-        {
-            /* Cancel the inactive timer */
-            g_source_remove (session->priv->inactive_timeout);
-
-            session->priv->started = TRUE;
-        }
-        else
-        {
-            XDMCPPacket *response;
-
-            response = xdmcp_packet_alloc (XDMCP_Failed);
-            response->Failed.session_id = packet->Manage.session_id;
-            response->Failed.status = g_strdup_printf ("Failed to connect to display :%d", packet->Manage.display_number);
-            send_packet (socket, address, response);
-            xdmcp_packet_free (response);
-        }
-    }
-    else
+    if (!session)
     {
         XDMCPPacket *response;
 
         response = xdmcp_packet_alloc (XDMCP_Refuse);
         response->Refuse.session_id = packet->Manage.session_id;
+        send_packet (socket, address, response);
+        xdmcp_packet_free (response);
+
+        return;
+    }
+
+    /* Ignore duplicate requests */
+    if (session->priv->started)
+    {
+        if (session->priv->display_number != packet->Manage.display_number ||
+            strcmp (session->priv->display_class, packet->Manage.display_class) != 0)
+            g_debug ("Ignoring duplicate Manage with different data");
+        return;
+    }
+
+    /* Reject if has changed display number */
+    if (packet->Manage.display_number != session->priv->display_number)
+    {
+        XDMCPPacket *response;
+
+        g_debug ("Received Manage for display number %d, but Request was %d", packet->Manage.display_number, session->priv->display_number);
+        response = xdmcp_packet_alloc (XDMCP_Refuse);
+        response->Refuse.session_id = packet->Manage.session_id;
+        send_packet (socket, address, response);
+        xdmcp_packet_free (response);
+    }
+
+    session->priv->display_class = g_strdup (packet->Manage.display_class);
+
+    g_signal_emit (server, signals[NEW_SESSION], 0, session, &result);
+    if (result)
+    {
+        /* Cancel the inactive timer */
+        g_source_remove (session->priv->inactive_timeout);
+
+        session->priv->started = TRUE;
+    }
+    else
+    {
+        XDMCPPacket *response;
+
+        response = xdmcp_packet_alloc (XDMCP_Failed);
+        response->Failed.session_id = packet->Manage.session_id;
+        response->Failed.status = g_strdup_printf ("Failed to connect to display :%d", packet->Manage.display_number);
         send_packet (socket, address, response);
         xdmcp_packet_free (response);
     }
@@ -521,6 +557,10 @@ read_cb (GSocket *socket, GIOCondition condition, XDMCPServer *server)
     gssize n_read;
 
     n_read = g_socket_receive_from (socket, &address, data, 1024, NULL, &error);
+    if (error)
+        g_warning ("Failed to read from XDMCP socket: %s", error->message);
+    g_clear_error (&error);
+
     if (n_read > 0)
     {
         XDMCPPacket *packet;
@@ -554,10 +594,6 @@ read_cb (GSocket *socket, GIOCondition condition, XDMCPServer *server)
             xdmcp_packet_free (packet);
         }
     }
-    else
-        g_warning ("Failed to read from XDMCP socket: %s", error->message);
-
-    g_clear_error (&error);
 
     return TRUE;
 }
@@ -593,25 +629,28 @@ xdmcp_server_start (XDMCPServer *server)
     g_return_val_if_fail (server != NULL, FALSE);
   
     server->priv->socket = open_udp_socket (G_SOCKET_FAMILY_IPV4, server->priv->port, &error);
+    if (error)
+        g_warning ("Failed to create IPv4 XDMCP socket: %s", error->message);
+    g_clear_error (&error);
+  
     if (server->priv->socket)
     {
         source = g_socket_create_source (server->priv->socket, G_IO_IN, NULL);
         g_source_set_callback (source, (GSourceFunc) read_cb, server, NULL);
         g_source_attach (source, NULL);
     }
-    else
-        g_warning ("Failed to create IPv4 XDMCP socket: %s", error->message);
+    
+    server->priv->socket6 = open_udp_socket (G_SOCKET_FAMILY_IPV6, server->priv->port, &error);
+    if (error)
+        g_warning ("Failed to create IPv6 XDMCP socket: %s", error->message);
     g_clear_error (&error);
-    server->priv->socket6 = open_udp_socket (G_SOCKET_FAMILY_IPV6, server->priv->port, &error);  
+
     if (server->priv->socket6)
     {
         source = g_socket_create_source (server->priv->socket6, G_IO_IN, NULL);
         g_source_set_callback (source, (GSourceFunc) read_cb, server, NULL);
         g_source_attach (source, NULL);
     }
-    else
-        g_warning ("Failed to create IPv6 XDMCP socket: %s", error->message);
-    g_clear_error (&error);
 
     if (!server->priv->socket && !server->priv->socket6)
         return FALSE;

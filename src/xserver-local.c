@@ -196,6 +196,15 @@ xserver_local_get_vt (XServerLocal *server)
     return server->priv->vt;
 }
 
+gchar *
+xserver_local_get_authority_file_path (XServerLocal *server)
+{
+    g_return_val_if_fail (server != NULL, 0);
+    if (server->priv->authority_file)
+        return g_file_get_path (server->priv->authority_file);
+    return NULL;
+}
+
 static gchar *
 get_absolute_command (const gchar *command)
 {
@@ -268,7 +277,8 @@ stopped_cb (Process *process, XServerLocal *server)
         g_debug ("Removing X server authority from %s", path);
         g_free (path);
 
-        if (!xauth_write (xserver_get_authority (XSERVER (server)), XAUTH_WRITE_MODE_REMOVE, NULL, server->priv->authority_file, &error))
+        xauth_write (xserver_get_authority (XSERVER (server)), XAUTH_WRITE_MODE_REMOVE, NULL, server->priv->authority_file, &error);
+        if (error)
             g_debug ("Error removing authority: %s", error->message);
         g_clear_error (&error);
 
@@ -325,7 +335,8 @@ write_authority_file (XServerLocal *server)
     g_debug ("Writing X server authority to %s", path);
     g_free (path);
 
-    if (!xauth_write (authority, XAUTH_WRITE_MODE_REPLACE, NULL, server->priv->authority_file, &error))
+    xauth_write (authority, XAUTH_WRITE_MODE_REPLACE, NULL, server->priv->authority_file, &error);
+    if (error)
         g_warning ("Failed to write authority: %s", error->message);
     g_clear_error (&error);
 }
@@ -383,7 +394,7 @@ xserver_local_start (DisplayServer *display_server)
     gethostname (hostname, 1024);
     number = g_strdup_printf ("%d", xserver_get_display_number (XSERVER (server)));
     if (!server->priv->xdmcp_key)
-        xserver_set_authority (XSERVER (server), xauth_new_cookie (XAUTH_FAMILY_LOCAL, hostname, number));
+        xserver_set_authority (XSERVER (server), xauth_new_cookie (XAUTH_FAMILY_LOCAL, (guint8*) hostname, strlen (hostname), number));
     g_free (number);
     write_authority_file (server);
     if (server->priv->authority_file)
@@ -441,12 +452,13 @@ xserver_local_start (DisplayServer *display_server)
                             NULL,
                             command->str,
                             &error);
-    g_string_free (command, TRUE);
-    if (!result)
+    if (error)
         g_warning ("Unable to create display: %s", error->message);
-    else
-        g_debug ("Waiting for ready signal from X server :%d", xserver_get_display_number (XSERVER (server)));
     g_clear_error (&error);
+    g_string_free (command, TRUE);
+
+    if (result)
+        g_debug ("Waiting for ready signal from X server :%d", xserver_get_display_number (XSERVER (server)));
 
     if (!result)
         stopped_cb (server->priv->xserver_process, XSERVER_LOCAL (server));

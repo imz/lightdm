@@ -9,31 +9,19 @@
  * license.
  */
 
-#ifndef _XDMCP_SESSION_PRIVATE_H_
-#define _XDMCP_SESSION_PRIVATE_H_
+#ifndef _CONSOLE_KIT_H_
+#define _CONSOLE_KIT_H_
 
-#include "xdmcp-server.h"
-#include "xauthority.h"
+#include <glib-object.h>
 
-struct XDMCPSessionPrivate
-{
-    XDMCPServer *server;
+G_BEGIN_DECLS
 
-    guint16 id;
+gchar *ck_open_session (GVariantBuilder *parameters);
 
-    gchar *manufacturer_display_id;
+void ck_unlock_session (const gchar *cookie);
 
-    GInetAddress *address;
+void ck_close_session (const gchar *cookie);
 
-    guint inactive_timeout;
+G_END_DECLS
 
-    XAuthority *authority;
-  
-    gboolean started;
-
-    guint16 display_number;
-
-    gchar *display_class;
-};
-
-#endif /* _XDMCP_SESSION_PRIVATE_H_ */
+#endif /* _CONSOLE_KIT_H_ */

@@ -67,6 +67,7 @@ seat_xlocal_add_display (Seat *seat)
     {
         gchar *dir, *path;
         GKeyFile *keys;
+        gboolean result;
         GError *error = NULL;
 
         dir = config_get_string (config_get_instance (), "LightDM", "config-directory");
@@ -74,23 +75,26 @@ seat_xlocal_add_display (Seat *seat)
         g_free (dir);
 
         keys = g_key_file_new ();
-        if (g_key_file_load_from_file (keys, path, G_KEY_FILE_NONE, &error))
+        result = g_key_file_load_from_file (keys, path, G_KEY_FILE_NONE, &error);
+        if (error)
+            g_debug ("Error getting key %s", error->message);
+        g_clear_error (&error);      
+
+        if (result)
         {
             gchar *key = NULL;
 
             if (g_key_file_has_key (keys, "keyring", key_name, NULL))
                 key = g_key_file_get_string (keys, "keyring", key_name, NULL);
             else
-                g_debug ("Key %s not defined", error->message);
+                g_debug ("Key %s not defined", key_name);
 
             if (key)
                 xserver_local_set_xdmcp_key (xserver, key);
             g_free (key);
         }
-        else
-            g_debug ("Error getting key %s", error->message);
+
         g_free (path);
-        g_clear_error (&error);
         g_key_file_free (keys);
     }
 
@@ -106,15 +110,26 @@ seat_xlocal_set_active_display (Seat *seat, Display *display)
     gint number = xserver_local_get_vt (XSERVER_LOCAL (XSERVER (display_get_display_server (display))));
     if (number >= 0)
         vt_set_active (number);
-  
+
     SEAT_CLASS (seat_xlocal_parent_class)->set_active_display (seat, display);
 }
 
 static void
 seat_xlocal_display_removed (Seat *seat, Display *display)
 {
-    /* Show a new greeter */
-    if (!seat_get_is_stopping (seat) && display == seat_get_active_display (seat))
+    if (seat_get_is_stopping (seat))
+        return;
+
+    /* If this is the only display and it failed to start then stop this seat */
+    if (g_list_length (seat_get_displays (seat)) == 0 && !display_get_is_ready (display))
+    {
+        g_debug ("Stopping X local seat, failed to start a display");
+        seat_stop (seat);
+        return;
+    }
+
+    /* Show a new greeter */  
+    if (display == seat_get_active_display (seat))
     {
         g_debug ("Active display stopped, switching to greeter");
         seat_switch_to_greeter (seat);

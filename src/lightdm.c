@@ -44,6 +44,7 @@ static guint seat_index = 0;
 static GDBusNodeInfo *session_info;
 static GHashTable *session_bus_entries;
 static guint session_index = 0;
+static gint exit_code = EXIT_SUCCESS;
 
 typedef struct
 {
@@ -53,7 +54,7 @@ typedef struct
     guint bus_id;
 } BusEntry;
 
-#define LDM_BUS_NAME "org.freedesktop.DisplayManager"
+#define LIGHTDM_BUS_NAME "org.freedesktop.DisplayManager"
 
 static void
 log_cb (const gchar *log_domain, GLogLevelFlags log_level,
@@ -131,7 +132,7 @@ static void
 display_manager_stopped_cb (DisplayManager *display_manager)
 {
     g_debug ("Stopping Light Display Manager");
-    exit (EXIT_SUCCESS);
+    exit (exit_code);
 }
 
 static Session *
@@ -344,6 +345,8 @@ handle_seat_get_property (GDBusConnection       *connection,
 
     if (g_strcmp0 (property_name, "CanSwitch") == 0)
         result = g_variant_new_boolean (seat_get_can_switch (seat));
+    if (g_strcmp0 (property_name, "HasGuestAccount") == 0)
+        result = g_variant_new_boolean (seat_get_allow_guest (seat));
     else if (g_strcmp0 (property_name, "Sessions") == 0)
     {
         GVariantBuilder *builder;
@@ -482,11 +485,14 @@ bus_entry_free (gpointer data)
     g_free (entry);
 }
 
-static void
-session_created_cb (Display *display, Session *session, Seat *seat)
+static gboolean
+start_session_cb (Display *display, Seat *seat)
 {
+    Session *session;
     BusEntry *seat_entry;
     gchar *path;
+
+    session = display_get_session (display);
 
     seat_entry = g_hash_table_lookup (seat_bus_entries, seat);
     process_set_env (PROCESS (session), "XDG_SEAT_PATH", seat_entry->path);
@@ -495,9 +501,17 @@ session_created_cb (Display *display, Session *session, Seat *seat)
     session_index++;
     process_set_env (PROCESS (session), "XDG_SESSION_PATH", path);
     g_free (path);
+
+    return FALSE;
 }
 
 static void
+session_stopped_cb (Session *session, Seat *seat)
+{
+    g_hash_table_remove (session_bus_entries, session);
+}
+
+static gboolean
 session_started_cb (Display *display, Seat *seat)
 {
     static const GDBusInterfaceVTable session_vtable =
@@ -510,9 +524,13 @@ session_started_cb (Display *display, Seat *seat)
 
     session = display_get_session (display);
 
+    g_signal_connect (session, "stopped", G_CALLBACK (session_stopped_cb), seat);
+
     seat_entry = g_hash_table_lookup (seat_bus_entries, seat);
     entry = bus_entry_new (process_get_env (PROCESS (session), "XDG_SESSION_PATH"), seat_entry ? seat_entry->path : NULL, "SessionRemoved");
     g_hash_table_insert (session_bus_entries, g_object_ref (session), entry);
+
+    g_debug ("Registering session with bus path %s", entry->path);
 
     entry->bus_id = g_dbus_connection_register_object (bus,
                                                        entry->path,
@@ -527,20 +545,15 @@ session_started_cb (Display *display, Seat *seat)
                                    "SessionAdded",
                                    g_variant_new ("(o)", entry->path),
                                    NULL);
-}
 
-static void
-session_stopped_cb (Display *display)
-{
-    g_hash_table_remove (session_bus_entries, display_get_session (display));
+    return FALSE;
 }
 
 static void
 display_added_cb (Seat *seat, Display *display)
 {
-    g_signal_connect (display, "session-created", G_CALLBACK (session_created_cb), seat);  
-    g_signal_connect (display, "session-started", G_CALLBACK (session_started_cb), seat);
-    g_signal_connect (display, "session-stopped", G_CALLBACK (session_stopped_cb), NULL);
+    g_signal_connect (display, "start-session", G_CALLBACK (start_session_cb), seat);
+    g_signal_connect_after (display, "start-session", G_CALLBACK (session_started_cb), seat);
 }
 
 static void
@@ -566,6 +579,8 @@ seat_added_cb (DisplayManager *display_manager, Seat *seat)
     g_free (path);
     g_hash_table_insert (seat_bus_entries, g_object_ref (seat), entry);
 
+    g_debug ("Registering seat with bus path %s", entry->path);
+
     entry->bus_id = g_dbus_connection_register_object (bus,
                                                        entry->path,
                                                        seat_info->interfaces[0],
@@ -585,6 +600,13 @@ static void
 seat_removed_cb (DisplayManager *display_manager, Seat *seat)
 {
     g_hash_table_remove (seat_bus_entries, seat);
+
+    if (seat_get_boolean_property (seat, "exit-on-failure"))
+    {
+        g_debug ("Stopping lightdm, required seat has stopped");
+        exit_code = EXIT_FAILURE;
+        display_manager_stop (display_manager);
+    }
 }
 
 static void
@@ -633,6 +655,7 @@ bus_acquired_cb (GDBusConnection *connection,
         "<node>"
         "  <interface name='org.freedesktop.DisplayManager.Seat'>"
         "    <property name='CanSwitch' type='b' access='read'/>"
+        "    <property name='HasGuestAccount' type='b' access='read'/>"
         "    <property name='Sessions' type='ao' access='read'/>"
         "    <method name='SwitchToGreeter'/>"
         "    <method name='SwitchToUser'>"
@@ -653,6 +676,8 @@ bus_acquired_cb (GDBusConnection *connection,
         "</node>";
     GDBusNodeInfo *display_manager_info;
     GList *link;
+  
+    g_debug ("Acquired bus name");
 
     bus = connection;
 
@@ -685,7 +710,7 @@ name_lost_cb (GDBusConnection *connection,
               gpointer user_data)
 {
     if (connection)
-        g_printerr ("Failed to use bus name " LDM_BUS_NAME ", do you have appropriate permissions?\n");
+        g_printerr ("Failed to use bus name " LIGHTDM_BUS_NAME ", do you have appropriate permissions?\n");
     else
         g_printerr ("Failed to get D-Bus connection\n");
 
@@ -720,7 +745,7 @@ xdmcp_session_cb (XDMCPServer *server, XDMCPSession *session)
     set_seat_properties (SEAT (seat), NULL);
     result = display_manager_add_seat (display_manager, SEAT (seat));
     g_object_unref (seat);
-  
+
     return result;
 }
 
@@ -755,7 +780,7 @@ main (int argc, char **argv)
     {
         { "config", 'c', 0, G_OPTION_ARG_STRING, &config_path,
           /* Help string for command line --config flag */
-          N_("Use configuration file"), NULL },
+          N_("Use configuration file"), "FILE" },
         { "debug", 'd', 0, G_OPTION_ARG_NONE, &debug,
           /* Help string for command line --debug flag */
           N_("Print debugging messages"), NULL },
@@ -818,7 +843,8 @@ main (int argc, char **argv)
     g_option_context_add_main_entries (option_context, options, GETTEXT_PACKAGE);
     if (!g_option_context_parse (option_context, &argc, &argv, &error))
     {
-        fprintf (stderr, "%s\n", error->message);
+        if (error)
+            fprintf (stderr, "%s\n", error->message);
         fprintf (stderr, /* Text printed out when an unknown command-line argument provided */
                  _("Run '%s --help' to see a full list of available command line options."), argv[0]);
         fprintf (stderr, "\n");
@@ -900,9 +926,14 @@ main (int argc, char **argv)
     /* Load config file */
     if (!config_load_from_file (config_get_instance (), config_path, &error))
     {
-        if (explicit_config || !g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
+        gboolean is_empty;
+
+        is_empty = error && g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT);
+      
+        if (explicit_config || !is_empty)      
         {
-            g_printerr ("Failed to load configuration from %s: %s\n", config_path, error->message);
+            if (error)
+                g_printerr ("Failed to load configuration from %s: %s\n", config_path, error->message);
             exit (EXIT_FAILURE);
         }
     }
@@ -992,8 +1023,9 @@ main (int argc, char **argv)
     g_debug ("Loaded configuration from %s", config_path);
     g_free (config_path);
 
+    g_debug ("Using D-Bus name %s", LIGHTDM_BUS_NAME);
     g_bus_own_name (getuid () == 0 ? G_BUS_TYPE_SYSTEM : G_BUS_TYPE_SESSION,
-                    LDM_BUS_NAME,
+                    LIGHTDM_BUS_NAME,
                     G_BUS_NAME_OWNER_FLAGS_NONE,
                     bus_acquired_cb,
                     NULL,
@@ -1029,7 +1061,7 @@ main (int argc, char **argv)
         g_debug ("Loading seat %s", config_section);
         type = config_get_string (config_get_instance (), config_section, "type");
         if (!type)
-            type = config_get_string (config_get_instance (), config_section, "type");
+            type = config_get_string (config_get_instance (), "SeatDefaults", "type");
         seat = seat_new (type);
         g_free (type);
         if (seat)
@@ -1057,6 +1089,7 @@ main (int argc, char **argv)
         if (seat)
         {
             set_seat_properties (seat, NULL);
+            seat_set_property (seat, "exit-on-failure", "true");
             display_manager_add_seat (display_manager, seat);
         }
         else
@@ -1085,6 +1118,7 @@ main (int argc, char **argv)
         {
             gchar *dir, *path;
             GKeyFile *keys;
+            gboolean result;
             GError *error = NULL;
 
             dir = config_get_string (config_get_instance (), "LightDM", "config-directory");
@@ -1092,16 +1126,18 @@ main (int argc, char **argv)
             g_free (dir);
 
             keys = g_key_file_new ();
-            if (g_key_file_load_from_file (keys, path, G_KEY_FILE_NONE, &error))
+            result = g_key_file_load_from_file (keys, path, G_KEY_FILE_NONE, &error);
+            if (error)
+                g_debug ("Error getting key %s", error->message);
+            g_clear_error (&error);
+
+            if (result)
             {
                 if (g_key_file_has_key (keys, "keyring", key_name, NULL))
                     key = g_key_file_get_string (keys, "keyring", key_name, NULL);
                 else
-                    g_debug ("Key %s not defined", error->message);
+                    g_debug ("Key %s not defined", key_name);
             }
-            else
-                g_debug ("Error getting key %s", error->message);
-            g_clear_error (&error);
             g_free (path);
             g_key_file_free (keys);
         }
