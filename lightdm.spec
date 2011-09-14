@@ -5,8 +5,8 @@
 %def_enable qt
 
 Name: lightdm
-Version: 0.9.4
-Release: alt2
+Version: 0.9.5
+Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -21,6 +21,7 @@ Source4: %name.wms
 Patch1: %name-%version-%release.patch
 
 Requires: %name-greeter
+Requires: accountsservice
 
 BuildRequires: gcc-c++ intltool gnome-common
 BuildRequires: glib2-devel libgio-devel >= 2.26
@@ -215,6 +216,9 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Wed Sep 14 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.5-alt1
+- 0.9.5
+
 * Fri Sep 02 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.4-alt2
 - add hook for wms-methods.d based on gdm
 
