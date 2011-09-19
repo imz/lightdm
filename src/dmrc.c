@@ -16,6 +16,7 @@
 #include "dmrc.h"
 #include "configuration.h"
 #include "user.h"
+#include "privileges.h"
 
 GKeyFile *
 dmrc_load (const gchar *username)
@@ -80,10 +81,18 @@ dmrc_save (GKeyFile *dmrc_file, const gchar *username)
     /* Update the users .dmrc */
     if (user)
     {
+        gboolean drop_privileges;
+
         path = g_build_filename (user_get_home_directory (user), ".dmrc", NULL);
+
+        /* Guard against privilege escalation through symlinks, etc. */
+        drop_privileges = geteuid () == 0;
+        if (drop_privileges)
+            privileges_drop (user);
         g_file_set_contents (path, data, length, NULL);
-        if (getuid () == 0 && chown (path, user_get_uid (user), user_get_gid (user)) < 0)
-            g_warning ("Error setting ownership on %s: %s", path, strerror (errno));
+        if (drop_privileges)
+            privileges_reclaim ();
+
         g_free (path);
     }
 

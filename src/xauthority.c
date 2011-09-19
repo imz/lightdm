@@ -236,7 +236,7 @@ write_string (GOutputStream *stream, const gchar *value, GError **error)
 }
 
 gboolean
-xauth_write (XAuthority *auth, XAuthWriteMode mode, User *user, GFile *file, GError **error)
+xauth_write (XAuthority *auth, XAuthWriteMode mode, GFile *file, GError **error)
 {
     GList *link, *records = NULL;
     GFileInputStream *input_stream = NULL;
@@ -344,20 +344,8 @@ xauth_write (XAuthority *auth, XAuthWriteMode mode, User *user, GFile *file, GEr
         result = g_output_stream_close (G_OUTPUT_STREAM (output_stream), NULL, error);
     g_object_unref (output_stream);
 
-    if (!result)
-        return FALSE;
-
-    /* NOTE: Would like to do:
-     * g_file_set_attribute_string (file, G_FILE_ATTRIBUTE_OWNER_USER, username, G_FILE_QUERY_INFO_NONE, NULL, error))
-     * but not supported. */
-    if (user && getuid () == 0)
-    {
-        if (chown (g_file_get_path (file), user_get_uid (user), user_get_gid (user)) < 0)
-            g_warning ("Failed to set authorization owner: %s", strerror (errno));
-    }
-  
-    return TRUE;
-}
+    return result;
+}    
 
 static void
 xauth_init (XAuthority *auth)

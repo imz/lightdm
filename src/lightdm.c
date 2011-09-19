@@ -18,11 +18,14 @@
 #include <glib/gi18n.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 #include "configuration.h"
 #include "display-manager.h"
 #include "xdmcp-server.h"
+#include "vnc-server.h"
 #include "seat-xdmcp-session.h"
+#include "seat-xvnc.h"
 #include "xserver.h"
 #include "user.h"
 #include "pam-session.h"
@@ -31,11 +34,12 @@
 static gchar *config_path = NULL;
 static GMainLoop *loop = NULL;
 static GTimer *log_timer;
-static FILE *log_file;
+static int log_fd = -1;
 static gboolean debug = FALSE;
 
 static DisplayManager *display_manager = NULL;
 static XDMCPServer *xdmcp_server = NULL;
+static VNCServer *vnc_server = NULL;
 static GDBusConnection *bus = NULL;
 static guint bus_id;
 static GDBusNodeInfo *seat_info;
@@ -61,10 +65,14 @@ log_cb (const gchar *log_domain, GLogLevelFlags log_level,
         const gchar *message, gpointer data)
 {
     /* Log everything to a file */
-    if (log_file) {
+    if (log_fd >= 0)
+    {
         const gchar *prefix;
+        gchar *text;
+        ssize_t n_written;
 
-        switch (log_level & G_LOG_LEVEL_MASK) {
+        switch (log_level & G_LOG_LEVEL_MASK)
+        {
         case G_LOG_LEVEL_ERROR:
             prefix = "ERROR:";
             break;
@@ -88,8 +96,11 @@ log_cb (const gchar *log_domain, GLogLevelFlags log_level,
             break;
         }
 
-        fprintf (log_file, "[%+.2fs] %s %s\n", g_timer_elapsed (log_timer, NULL), prefix, message);
-        fflush (log_file);
+        text = g_strdup_printf ("[%+.2fs] %s %s\n", g_timer_elapsed (log_timer, NULL), prefix, message);
+        n_written = write (log_fd, text, strlen (text));
+        if (n_written < 0)
+            ; /* Check result so compiler doesn't warn about it */
+        g_free (text);
     }
 
     /* Only show debug if requested */
@@ -113,7 +124,7 @@ log_init (void)
     path = g_build_filename (log_dir, "lightdm.log", NULL);
     g_free (log_dir);
 
-    log_file = fopen (path, "w");
+    log_fd = open (path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
     g_log_set_default_handler (log_cb, NULL);
 
     g_debug ("Logging to %s", path);
@@ -749,6 +760,17 @@ xdmcp_session_cb (XDMCPServer *server, XDMCPSession *session)
     return result;
 }
 
+static void
+vnc_connection_cb (VNCServer *server, GSocket *connection)
+{
+    SeatXVNC *seat;
+
+    seat = seat_xvnc_new (connection);
+    set_seat_properties (SEAT (seat), NULL);
+    display_manager_add_seat (display_manager, SEAT (seat));
+    g_object_unref (seat);
+}
+
 int
 main (int argc, char **argv)
 {
@@ -1148,6 +1170,33 @@ main (int argc, char **argv)
 
         g_debug ("Starting XDMCP server on UDP/IP port %d", xdmcp_server_get_port (xdmcp_server));
         xdmcp_server_start (xdmcp_server);
+    }
+
+    /* Start the VNC server */
+    if (config_get_boolean (config_get_instance (), "VNCServer", "enabled"))
+    {
+        gchar *path;
+
+        path = g_find_program_in_path ("Xvnc");
+        if (path)
+        {
+            vnc_server = vnc_server_new ();
+            if (config_has_key (config_get_instance (), "VNCServer", "port"))
+            {
+                gint port;
+                port = config_get_integer (config_get_instance (), "VNCServer", "port");
+                if (port > 0)
+                    vnc_server_set_port (vnc_server, port);
+            }
+            g_signal_connect (vnc_server, "new-connection", G_CALLBACK (vnc_connection_cb), NULL);
+
+            g_debug ("Starting VNC server on TCP/IP port %d", vnc_server_get_port (vnc_server));
+            vnc_server_start (vnc_server);
+
+            g_free (path);
+        }
+        else
+            g_warning ("Can't start VNC server, Xvn is not in the path");
     }
 
     g_main_loop_run (loop);
