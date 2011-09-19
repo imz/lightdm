@@ -5,8 +5,8 @@
 %def_enable qt
 
 Name: lightdm
-Version: 0.9.5
-Release: alt2
+Version: 0.9.7
+Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -217,6 +217,9 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Mon Sep 19 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.7-alt1
+- 0.9.7
+
 * Mon Sep 19 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.5-alt2
 - fix: package hook for wms-methods.d
 
