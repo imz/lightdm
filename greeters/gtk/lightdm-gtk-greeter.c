@@ -497,11 +497,11 @@ load_user_list ()
 
         image = lightdm_user_get_image (user);
         if (image)
-            pixbuf = gdk_pixbuf_new_from_file_at_scale (image, 64, 64, TRUE, NULL);
+            pixbuf = gdk_pixbuf_new_from_file_at_scale (image, 48, 48, TRUE, NULL);
         if (!pixbuf)
             pixbuf = gtk_icon_theme_load_icon (gtk_icon_theme_get_default (),
-                                               "stock_person",
-                                               64,
+                                               "avatar-default",
+                                               48,
                                                GTK_ICON_LOOKUP_USE_BUILTIN,
                                                NULL);
         /*if (!pixbuf)
@@ -529,7 +529,7 @@ load_user_list ()
                             0, "*guest",
                             1, "Guest Account",
                             2, PANGO_WEIGHT_NORMAL,
-                            3, gtk_icon_theme_load_icon (gtk_icon_theme_get_default (), "stock_person", 64, 0, NULL),
+                            3, gtk_icon_theme_load_icon (gtk_icon_theme_get_default (), "avatar-default", 48, 0, NULL),
                             -1);
         if (lightdm_greeter_get_select_guest_hint (greeter))
             gtk_tree_selection_select_iter (gtk_tree_view_get_selection (user_view), &iter);
@@ -540,7 +540,7 @@ load_user_list ()
                         0, NULL,
                         1, "Other...",
                         2, PANGO_WEIGHT_NORMAL,
-                        3, gtk_icon_theme_load_icon (gtk_icon_theme_get_default (), "stock_person", 64, 0, NULL),
+                        3, gtk_icon_theme_load_icon (gtk_icon_theme_get_default (), "avatar-default", 48, 0, NULL),
                         -1);
 }
 
