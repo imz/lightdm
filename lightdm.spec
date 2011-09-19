@@ -6,7 +6,7 @@
 
 Name: lightdm
 Version: 0.9.5
-Release: alt1
+Release: alt2
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -163,6 +163,7 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 %config %_sysconfdir/dbus-1/system.d/org.freedesktop.DisplayManager.conf
 %dir %_sysconfdir/%name
 %dir %_sysconfdir/%name/sessions
+%_sysconfdir/X11/wms-methods.d/lightdm
 %config(noreplace) %_sysconfdir/%name/%name.conf
 %config(noreplace) %_sysconfdir/%name/keys.conf
 %config(noreplace) %_sysconfdir/%name/users.conf
@@ -216,6 +217,9 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Mon Sep 19 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.5-alt2
+- fix: package hook for wms-methods.d
+
 * Wed Sep 14 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.5-alt1
 - 0.9.5
 
