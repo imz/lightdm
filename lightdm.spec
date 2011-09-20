@@ -130,7 +130,8 @@ This package provides a Qt-based LightDM greeter engine.
 %endif
 	--with-user-session=default \
 	--libexecdir=%_libexecdir \
-	--with-greeter-user=_ldm
+	--with-greeter-user=_ldm \
+	--with-greeter-session=lightdm-default-greeter
 
 %make_build
 
