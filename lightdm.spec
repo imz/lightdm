@@ -138,6 +138,10 @@ This package provides a Qt-based LightDM greeter engine.
 %install
 %make_install DESTDIR=%buildroot install
 
+# fix location
+mv %buildroot%_libexecdir/lightdm-set-defaults \
+    %buildroot%_libexecdir/lightdm/lightdm-set-defaults
+
 mkdir -p %buildroot%_sysconfdir/%name/sessions
 mkdir -p %buildroot%_sysconfdir/X11/wms-methods.d
 mkdir -p %buildroot%_sysconfdir/pam.d
