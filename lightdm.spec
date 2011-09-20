@@ -157,14 +157,13 @@ install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 # install external hook for update_wms
 install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
+%find_lang %name
+
 cd %buildroot
 # Add alternatives for xgreeters
 mkdir -p ./%_altdir
 printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%name-gtk-greeter.desktop\t100\n' >./%_altdir/%name-gtk-greeter
 printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%name-qt-greeter.desktop\t200\n' >./%_altdir/%name-qt-greeter
-
-
-%find_lang %name
 
 %pre
 %_sbindir/groupadd -r -f _ldm >/dev/null 2>&1 || :
