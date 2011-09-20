@@ -131,7 +131,7 @@ This package provides a Qt-based LightDM greeter engine.
 	--with-user-session=default \
 	--libexecdir=%_libexecdir \
 	--with-greeter-user=_ldm \
-	--with-greeter-session=lightdm-default-greeter
+	--with-greeter-session=%name-default-greeter
 
 %make_build
 
@@ -156,6 +156,13 @@ install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 
 # install external hook for update_wms
 install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
+
+cd %buildroot
+# Add alternatives for xgreeters
+mkdir -p ./%_altdir
+printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%name-gtk-greeter.desktop\t100\n' >./%_altdir/%name-gtk-greeter
+printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%name-qt-greeter.desktop\t200\n' >./%_altdir/%name-qt-greeter
+
 
 %find_lang %name
 
@@ -189,6 +196,7 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 %_libdir/liblightdm-gobject-?.so.*
 
 %files gtk-greeter
+%_altdir/%name-gtk-greeter
 %_sbindir/%name-gtk-greeter
 %_datadir/%name-gtk-greeter
 %_datadir/xgreeters/%name-gtk-greeter.desktop
@@ -208,6 +216,7 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 %_libdir/liblightdm-qt-?.so.*
 
 %files qt-greeter
+%_altdir/%name-qt-greeter
 %_sbindir/%name-qt-greeter
 %_datadir/xgreeters/%name-qt-greeter.desktop
 %endif
