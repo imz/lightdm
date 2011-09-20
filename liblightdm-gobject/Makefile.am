@@ -6,7 +6,7 @@ liblightdm_gobject_1_la_LDFLAGS = -export-symbols-regex \^lightdm_.*
 liblightdm_gobject_1_la_LIBADD = $(LIBLIGHTDM_GOBJECT_LIBS)
 liblightdm_gobject_1_la_CFLAGS = $(LIBLIGHTDM_GOBJECT_CFLAGS) \
 	$(WARN_CFLAGS) \
-	-DXSESSIONS_DIR=\"$(datadir)/xsessions\"
+	-DXSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions\"
 
 mainheader_HEADERS = lightdm.h
 mainheaderdir=$(includedir)/lightdm-gobject-1

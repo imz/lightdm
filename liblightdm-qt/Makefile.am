@@ -15,7 +15,7 @@ user_moc.cpp: QLightDM/User
 
 liblightdm_qt_1_la_LIBADD = $(LIBLIGHTDM_QT_LIBS)
 liblightdm_qt_1_la_CXXFLAGS = $(LIBLIGHTDM_QT_CFLAGS) \
-	-DXSESSIONS_DIR=\"$(datadir)/xsessions\"
+	-DXSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions\"
 
 liblightdm_qt_1include_HEADERS = \
 	QLightDM/Greeter \
