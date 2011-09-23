@@ -13,7 +13,7 @@
 #define _SESSION_H_
 
 #include "process.h"
-#include "user.h"
+#include "accounts.h"
 #include "pam-session.h"
 
 G_BEGIN_DECLS
@@ -36,7 +36,8 @@ typedef struct
     ProcessClass parent_class;
 
     gboolean (*start)(Session *session);
-    void     (*stop)(Session *session);
+    gboolean (*setup)(Session *session);
+    void     (*cleanup)(Session *session);
 } SessionClass;
 
 GType session_get_type (void);
@@ -55,11 +56,17 @@ void session_set_command (Session *session, const gchar *command);
 
 const gchar *session_get_command (Session *session);
 
-void session_set_cookie (Session *session, const gchar *cookie);
+void session_set_env (Session *process, const gchar *name, const gchar *value);
 
-const gchar *session_get_cookie (Session *session);
+const gchar *session_get_env (Session *session, const gchar *name);
+
+void session_set_console_kit_parameter (Session *session, const gchar *name, GVariant *value);
+
+const gchar *session_get_console_kit_cookie (Session *session);
 
 gboolean session_start (Session *session);
+
+void session_unlock (Session *session);
 
 void session_stop (Session *session);
 

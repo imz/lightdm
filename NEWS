@@ -1,3 +1,24 @@
+Overview of changes in lightdm 0.9.8
+
+    * GetSeatForCookie and GetSessionForCookie are now deprecated.  They
+      remain for now but use the XDG_SEAT_PATH and XDG_SESSION_PATH
+      environment variables instead.
+    * Change log filenames to be unique across different display types.
+    * Fix up script hooks, add regression tests for them
+    * Complete removal of X code from the core of LightDM, so it can better
+      support various display types
+    * Add ability to set the language of a user from the greeter
+    * Set LANG variable based on the user language
+    * Add language selector into GTK greeter (disabled by default)
+    * Allow TCP/IP connections if xserver-allow-tcp is true
+    * Allow lightdm --version to be run as non-root
+    * Automatically respond to PAM messages without prompts
+    * Create 'AddLocalXSeat' D-Bus method, and require root to use 'AddSeat'
+    * Fix multi-seat configuration picking the same display number
+    * Use correct D-Bus and power interface in liblightdm-qt
+    * Run pam_setcred inside the session process so pam_group works
+    * Make sure one session is always selected in the GTK greeter
+
 Overview of changes in lightdm 0.9.7
 
     * Set PAM_TTY to the display name, not the tty device

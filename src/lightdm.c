@@ -27,7 +27,6 @@
 #include "seat-xdmcp-session.h"
 #include "seat-xvnc.h"
 #include "xserver.h"
-#include "user.h"
 #include "pam-session.h"
 #include "process.h"
 
@@ -146,37 +145,6 @@ display_manager_stopped_cb (DisplayManager *display_manager)
     exit (exit_code);
 }
 
-static Session *
-get_session_for_cookie (const gchar *cookie, Seat **seat)
-{
-    GList *link;
-
-    for (link = display_manager_get_seats (display_manager); link; link = link->next)
-    {
-        Seat *s = link->data;
-        GList *l;
-
-        for (l = seat_get_displays (s); l; l = l->next)
-        {
-            Display *display = l->data;
-            Session *session;
-
-            session = display_get_session (display);
-            if (!session)
-                continue;
-
-            if (g_strcmp0 (session_get_cookie (session), cookie) == 0)
-            {
-                if (seat)
-                    *seat = s;
-                return session;
-            }
-        }
-    }
-
-    return NULL;
-}
-
 static GVariant *
 handle_display_manager_get_property (GDBusConnection       *connection,
                                      const gchar           *sender,
@@ -252,6 +220,37 @@ set_seat_properties (Seat *seat, const gchar *config_section)
     }
 }
 
+static Session *
+get_session_for_cookie (const gchar *cookie, Seat **seat)
+{
+    GList *link;
+ 
+    for (link = display_manager_get_seats (display_manager); link; link = link->next)
+    {
+        Seat *s = link->data;
+        GList *l;
+         
+        for (l = seat_get_displays (s); l; l = l->next)
+        {
+            Display *display = l->data;
+            Session *session;
+
+            session = display_get_session (display);
+            if (!session)
+                continue;
+
+            if (g_strcmp0 (session_get_console_kit_cookie (session), cookie) == 0)
+            {
+                if (seat)
+                    *seat = s;
+                return session;
+            }
+        }
+    }
+
+    return NULL;
+}
+
 static void
 handle_display_manager_call (GDBusConnection       *connection,
                              const gchar           *sender,
@@ -302,8 +301,49 @@ handle_display_manager_call (GDBusConnection       *connection,
         else// FIXME: Need to make proper error
             g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Failed to start seat");
     }
-    else if (g_strcmp0 (method_name, "GetSeatForCookie") == 0)
+    else if (g_strcmp0 (method_name, "AddLocalXSeat") == 0)
     {
+        gint display_number;
+        Seat *seat;
+
+        if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(i)")))
+            return;
+
+        g_variant_get (parameters, "(i)", &display_number);
+
+        g_debug ("Adding local X seat :%d", display_number);
+
+        seat = seat_new ("xremote");
+        if (seat)
+        {
+            gchar *display_number_string;
+
+            set_seat_properties (seat, NULL);
+            display_number_string = g_strdup_printf ("%d", display_number);
+            seat_set_property (seat, "xserver-display-number", display_number_string);
+            g_free (display_number_string);
+        }
+
+        if (!seat)
+        {
+            // FIXME: Need to make proper error
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Unable to create local X seat");
+            return;
+        }
+
+        if (display_manager_add_seat (display_manager, seat))
+        {
+            BusEntry *entry;
+
+            entry = g_hash_table_lookup (seat_bus_entries, seat);
+            g_dbus_method_invocation_return_value (invocation, g_variant_new ("(o)", entry->path));
+        }
+        else// FIXME: Need to make proper error
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Failed to start seat");
+    }
+    /* NOTE: This method is deprecated, use the XSG_SEAT_PATH environment variable instead */
+    else if (g_strcmp0 (method_name, "GetSeatForCookie") == 0)
+    {       
         gchar *cookie;
         Seat *seat = NULL;
         BusEntry *entry = NULL;
@@ -321,8 +361,10 @@ handle_display_manager_call (GDBusConnection       *connection,
         else // FIXME: Need to make proper error
             g_dbus_method_invocation_return_error_literal (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Unable to find seat for cookie");
     }
+
+    /* NOTE: This method is deprecated, use the XSG_SESSION_PATH environment variable instead */
     else if (g_strcmp0 (method_name, "GetSessionForCookie") == 0)
-    {
+    {      
         gchar *cookie;
         Session *session;
         BusEntry *entry = NULL;
@@ -506,11 +548,11 @@ start_session_cb (Display *display, Seat *seat)
     session = display_get_session (display);
 
     seat_entry = g_hash_table_lookup (seat_bus_entries, seat);
-    process_set_env (PROCESS (session), "XDG_SEAT_PATH", seat_entry->path);
+    session_set_env (session, "XDG_SEAT_PATH", seat_entry->path);
 
     path = g_strdup_printf ("/org/freedesktop/DisplayManager/Session%d", session_index);
     session_index++;
-    process_set_env (PROCESS (session), "XDG_SESSION_PATH", path);
+    session_set_env (session, "XDG_SESSION_PATH", path);
     g_free (path);
 
     return FALSE;
@@ -538,7 +580,7 @@ session_started_cb (Display *display, Seat *seat)
     g_signal_connect (session, "stopped", G_CALLBACK (session_stopped_cb), seat);
 
     seat_entry = g_hash_table_lookup (seat_bus_entries, seat);
-    entry = bus_entry_new (process_get_env (PROCESS (session), "XDG_SESSION_PATH"), seat_entry ? seat_entry->path : NULL, "SessionRemoved");
+    entry = bus_entry_new (session_get_env (session, "XDG_SESSION_PATH"), seat_entry ? seat_entry->path : NULL, "SessionRemoved");
     g_hash_table_insert (session_bus_entries, g_object_ref (session), entry);
 
     g_debug ("Registering session with bus path %s", entry->path);
@@ -633,6 +675,10 @@ bus_acquired_cb (GDBusConnection *connection,
         "    <method name='AddSeat'>"
         "      <arg name='type' direction='in' type='s'/>"
         "      <arg name='properties' direction='in' type='a(ss)'/>"
+        "      <arg name='seat' direction='out' type='o'/>"
+        "    </method>"
+        "    <method name='AddLocalXSeat'>"
+        "      <arg name='display-number' direction='in' type='i'/>"
         "      <arg name='seat' direction='out' type='o'/>"
         "    </method>"
         "    <method name='GetSeatForCookie'>"
@@ -874,6 +920,13 @@ main (int argc, char **argv)
     }
     g_clear_error (&error);
 
+    if (show_version)
+    {
+        /* NOTE: Is not translated so can be easily parsed */
+        g_printerr ("lightdm %s\n", VERSION);
+        return EXIT_SUCCESS;
+    }
+
     if (config_path)
     {
         config_dir = g_path_get_basename (config_path);
@@ -913,13 +966,6 @@ main (int argc, char **argv)
     {
         g_printerr ("Only allowed to use --passwd-file when running with --no-root.\n"); 
         return EXIT_FAILURE;
-    }
-
-    if (show_version)
-    {
-        /* NOTE: Is not translated so can be easily parsed */
-        g_printerr ("lightdm %s\n", VERSION);
-        return EXIT_SUCCESS;
     }
 
     /* Write PID file */
@@ -974,6 +1020,8 @@ main (int argc, char **argv)
         config_set_string (config_get_instance (), "SeatDefaults", "type", "xlocal");
     if (!config_has_key (config_get_instance (), "SeatDefaults", "xserver-command"))
         config_set_string (config_get_instance (), "SeatDefaults", "xserver-command", "X");
+    if (!config_has_key (config_get_instance (), "SeatDefaults", "start-session"))
+        config_set_boolean (config_get_instance (), "SeatDefaults", "start-session", TRUE);
     if (!config_has_key (config_get_instance (), "SeatDefaults", "allow-guest"))
         config_set_boolean (config_get_instance (), "SeatDefaults", "allow-guest", TRUE);
     if (!config_has_key (config_get_instance (), "SeatDefaults", "greeter-session"))

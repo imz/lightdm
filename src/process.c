@@ -26,8 +26,6 @@ enum {
     STARTED,
     GOT_DATA,
     GOT_SIGNAL,  
-    EXITED,
-    TERMINATED,
     STOPPED,
     LAST_SIGNAL
 };
@@ -52,6 +50,9 @@ struct ProcessPrivate
  
     /* Process ID */
     GPid pid;
+  
+    /* Exit status of process */
+    int exit_status;
 
     /* Timeout waiting for process to quit */
     guint quit_timeout;
@@ -150,6 +151,7 @@ void
 process_set_env (Process *process, const gchar *name, const gchar *value)
 {
     g_return_if_fail (process != NULL);
+    g_return_if_fail (name != NULL);
     g_hash_table_insert (process->priv->env, g_strdup (name), g_strdup (value));
 }
 
@@ -165,16 +167,12 @@ process_watch_cb (GPid pid, gint status, gpointer data)
 {
     Process *process = data;
 
+    process->priv->exit_status = status;
+
     if (WIFEXITED (status))
-    {
         g_debug ("Process %d exited with return value %d", pid, WEXITSTATUS (status));
-        g_signal_emit (process, signals[EXITED], 0, WEXITSTATUS (status));
-    }
     else if (WIFSIGNALED (status))
-    {
         g_debug ("Process %d terminated with signal %d", pid, WTERMSIG (status));
-        g_signal_emit (process, signals[TERMINATED], 0, WTERMSIG (status));
-    }
 
     if (process->priv->quit_timeout)
         g_source_remove (process->priv->quit_timeout);
@@ -183,25 +181,6 @@ process_watch_cb (GPid pid, gint status, gpointer data)
     g_hash_table_remove (processes, GINT_TO_POINTER (pid));
 
     g_signal_emit (process, signals[STOPPED], 0);
-}
-
-static void
-process_run (Process *process)
-{
-    gint argc;
-    gchar **argv;
-    GError *error = NULL;
-
-    if (!g_shell_parse_argv (process->priv->command, &argc, &argv, &error))
-    {
-        g_warning ("Error parsing command %s: %s", process->priv->command, error->message);
-        _exit (EXIT_FAILURE);
-    }
-
-    execv (argv[0], argv);
-
-    g_warning ("Error executing child process %s: %s", argv[0], g_strerror (errno));
-    _exit (EXIT_FAILURE);
 }
 
 static void
@@ -231,18 +210,6 @@ run (Process *process)
                 g_warning ("Failed to initialize supplementary groups for %s: %s", user_get_name (process->priv->user), strerror (errno));
                 _exit (EXIT_FAILURE);
             }
-
-            if (setgid (user_get_gid (process->priv->user)) != 0)
-            {
-                g_warning ("Failed to set group ID to %d: %s", user_get_gid (process->priv->user), strerror (errno));
-                _exit (EXIT_FAILURE);
-            }
-
-            if (setuid (user_get_uid (process->priv->user)) != 0)
-            {
-                g_warning ("Failed to set user ID to %d: %s", user_get_uid (process->priv->user), strerror (errno));
-                _exit (EXIT_FAILURE);
-            }
         }
 
         if (chdir (user_get_home_directory (process->priv->user)) != 0)
@@ -269,6 +236,41 @@ run (Process *process)
     }
 
     g_signal_emit (process, signals[RUN], 0); 
+}
+
+static void
+process_run (Process *process)
+{
+    gint argc;
+    gchar **argv;
+    GError *error = NULL;
+
+    if (!g_shell_parse_argv (process->priv->command, &argc, &argv, &error))
+    {
+        g_warning ("Error parsing command %s: %s", process->priv->command, error->message);
+        _exit (EXIT_FAILURE);
+    }
+
+    /* Drop privileges */
+    if (process->priv->user && getuid () == 0)
+    {
+        if (setgid (user_get_gid (process->priv->user)) != 0)
+        {
+            g_warning ("Failed to set group ID to %d: %s", user_get_gid (process->priv->user), strerror (errno));
+            _exit (EXIT_FAILURE);
+        }
+
+        if (setuid (user_get_uid (process->priv->user)) != 0)
+        {
+            g_warning ("Failed to set user ID to %d: %s", user_get_uid (process->priv->user), strerror (errno));
+            _exit (EXIT_FAILURE);
+        }
+    }
+  
+    execvp (argv[0], argv);
+
+    g_warning ("Error executing child process %s: %s", argv[0], g_strerror (errno));
+    _exit (EXIT_FAILURE);
 }
 
 gboolean
@@ -359,9 +361,29 @@ quit_timeout_cb (Process *process)
 void
 process_stop (Process *process)
 {
+    g_return_if_fail (process != NULL);
+
     /* Send SIGTERM, and then SIGKILL if no response */
     process->priv->quit_timeout = g_timeout_add (5000, (GSourceFunc) quit_timeout_cb, process);
     process_signal (process, SIGTERM);
+}
+
+void
+process_wait (Process *process)
+{
+    int exit_status;
+
+    g_return_if_fail (process != NULL);
+
+    waitpid (process->priv->pid, &exit_status, 0);
+    process_watch_cb (process->priv->pid, exit_status, process);
+}
+
+int
+process_get_exit_status (Process *process)
+{
+    g_return_val_if_fail (process != NULL, -1);
+    return process->priv->exit_status;
 }
 
 static void
@@ -475,22 +497,6 @@ process_class_init (ProcessClass *klass)
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (ProcessClass, got_signal),
-                      NULL, NULL,
-                      g_cclosure_marshal_VOID__INT,
-                      G_TYPE_NONE, 1, G_TYPE_INT);
-    signals[EXITED] =
-        g_signal_new ("exited",
-                      G_TYPE_FROM_CLASS (klass),
-                      G_SIGNAL_RUN_LAST,
-                      G_STRUCT_OFFSET (ProcessClass, exited),
-                      NULL, NULL,
-                      g_cclosure_marshal_VOID__INT,
-                      G_TYPE_NONE, 1, G_TYPE_INT);
-    signals[TERMINATED] =
-        g_signal_new ("terminated",
-                      G_TYPE_FROM_CLASS (klass),
-                      G_SIGNAL_RUN_LAST,
-                      G_STRUCT_OFFSET (ProcessClass, terminated),
                       NULL, NULL,
                       g_cclosure_marshal_VOID__INT,
                       G_TYPE_NONE, 1, G_TYPE_INT);

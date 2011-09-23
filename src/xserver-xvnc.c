@@ -16,6 +16,7 @@
 
 #include "xserver-xvnc.h"
 #include "configuration.h"
+#include "xserver-local.h"
 #include "process.h"
 
 struct XServerXVNCPrivate
@@ -35,37 +36,18 @@ struct XServerXVNCPrivate
 
 G_DEFINE_TYPE (XServerXVNC, xserver_xvnc, XSERVER_TYPE);
 
-static guint
-get_free_display_number (void)
-{
-    guint number;
-
-    number = config_get_integer (config_get_instance (), "LightDM", "minimum-display-number");
-    while (TRUE)
-    {
-        gchar *path;
-        gboolean result;
-  
-        path = g_strdup_printf ("/tmp/.X%d-lock", number);
-        result = g_file_test (path, G_FILE_TEST_EXISTS);
-        g_free (path);
-
-        if (!result)
-            break;
-
-        number++;
-    }
-  
-    return number;
-}
-
 XServerXVNC *
 xserver_xvnc_new (void)
 {
     XServerXVNC *self = g_object_new (XSERVER_XVNC_TYPE, NULL);
+    gchar *name;
 
-    xserver_set_display_number (XSERVER (self), get_free_display_number ());
-  
+    xserver_set_display_number (XSERVER (self), xserver_local_get_unused_display_number ());
+
+    name = g_strdup_printf ("xvnc-%d", xserver_get_display_number (XSERVER (self)));
+    display_server_set_name (DISPLAY_SERVER (self), name);
+    g_free (name);
+
     return self;
 }
 
@@ -81,6 +63,15 @@ xserver_xvnc_get_stdin (XServerXVNC *server)
 {
     g_return_val_if_fail (server != NULL, 0);
     return server->priv->stdin_fd;
+}
+
+gchar *
+xserver_xvnc_get_authority_file_path (XServerXVNC *server)
+{
+    g_return_val_if_fail (server != NULL, 0);
+    if (server->priv->authority_file)
+        return g_file_get_path (server->priv->authority_file);
+    return NULL;
 }
 
 static gchar *
@@ -139,6 +130,8 @@ stopped_cb (Process *process, XServerXVNC *server)
     g_object_unref (server->priv->xserver_process);
     server->priv->xserver_process = NULL;
 
+    xserver_local_release_display_number (xserver_get_display_number (XSERVER (server)));
+
     path = g_file_get_path (server->priv->authority_file);
     g_debug ("Removing X server authority %s", path);
     g_free (path);
@@ -173,7 +166,7 @@ xserver_xvnc_start (DisplayServer *display_server)
     g_signal_connect (server->priv->xserver_process, "stopped", G_CALLBACK (stopped_cb), server);
 
     /* Setup logging */
-    filename = g_strdup_printf ("%s.log", xserver_get_address (XSERVER (server)));
+    filename = g_strdup_printf ("%s.log", display_server_get_name (display_server));
     dir = config_get_string (config_get_instance (), "LightDM", "log-directory");
     path = g_build_filename (dir, filename, NULL);
     g_debug ("Logging to %s", path);
@@ -226,7 +219,7 @@ xserver_xvnc_start (DisplayServer *display_server)
 
     g_debug ("Launching Xvnc server");
 
-    process_set_user (server->priv->xserver_process, user_get_current ());
+    process_set_user (server->priv->xserver_process, accounts_get_current_user ());
     result = process_start (server->priv->xserver_process);
 
     if (result)

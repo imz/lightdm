@@ -41,25 +41,39 @@ xsession_new (XServer *xserver)
     return session;
 }
 
-static void
-write_authority (XSession *session)
+static gboolean
+xsession_start (Session *session)
 {
-    GError *error = NULL;
+    XSession *xsession = XSESSION (session);
+    PAMSession *authentication;
+    gchar *hostname;
 
-    xauth_write (session->priv->authority, XAUTH_WRITE_MODE_REPLACE, session->priv->authority_file, &error);
-    if (error)
-        g_warning ("Failed to write authority: %s", error->message);
-    g_clear_error (&error); 
+    authentication = session_get_authentication (session);
+    pam_session_set_item (authentication, PAM_TTY, xserver_get_address (xsession->priv->xserver));
+
+    session_set_console_kit_parameter (session, "x11-display", g_variant_new_string (xserver_get_address (xsession->priv->xserver)));
+    hostname = xserver_get_hostname (xsession->priv->xserver);
+    if (hostname)
+    {
+        session_set_console_kit_parameter (session, "remote-host-name", g_variant_new_string (hostname));
+        session_set_console_kit_parameter (session, "is-local", g_variant_new_boolean (FALSE));
+    }
+
+    session_set_env (session, "DISPLAY", xserver_get_address (xsession->priv->xserver));
+
+    return SESSION_CLASS (xsession_parent_class)->start (session);
 }
 
 static gboolean
-xsession_start (Session *session)
+xsession_setup (Session *session)
 {
     XSession *xsession = XSESSION (session);
 
     if (xserver_get_authority (xsession->priv->xserver))
     {
         gchar *path;
+        gboolean drop_privileges, result;
+        GError *error = NULL;
 
         xsession->priv->authority = g_object_ref (xserver_get_authority (xsession->priv->xserver));
       
@@ -85,28 +99,26 @@ xsession_start (Session *session)
         else
             path = g_build_filename (user_get_home_directory (session_get_user (session)), ".Xauthority", NULL);
 
-        process_set_env (PROCESS (session), "XAUTHORITY", path);
+        session_set_env (session, "XAUTHORITY", path);
         xsession->priv->authority_file = g_file_new_for_path (path);
-        if (xsession->priv->authority_in_system_dir)
-        {
-            gboolean drop_privileges;
 
-            g_debug ("Adding session authority to %s", path);
-            drop_privileges = geteuid () == 0;
-            if (drop_privileges)
-                privileges_drop (session_get_user (SESSION (session)));
-            write_authority (xsession);
-            if (drop_privileges)
-                privileges_reclaim ();
-        }
-        else
-            g_debug ("Adding session authority to %s (written in session process)", path);
+        g_debug ("Adding session authority to %s", path);
+        drop_privileges = geteuid () == 0;
+        if (drop_privileges)
+            privileges_drop (session_get_user (SESSION (session)));
+        result = xauth_write (xsession->priv->authority, XAUTH_WRITE_MODE_REPLACE, xsession->priv->authority_file, &error);
+        if (drop_privileges)
+            privileges_reclaim ();
+        if (error)
+            g_warning ("Failed to write authority: %s", error->message);
+        g_clear_error (&error); 
         g_free (path);
+
+        if (!result)
+            return FALSE;
     }
 
-    process_set_env (PROCESS (session), "DISPLAY", xserver_get_address (xsession->priv->xserver));
-
-    return SESSION_CLASS (xsession_parent_class)->start (session);
+    return SESSION_CLASS (xsession_parent_class)->setup (session);  
 }
 
 static void
@@ -117,7 +129,7 @@ xsession_remove_authority (XSession *session)
         gboolean drop_privileges;
       
         g_debug ("Removing session authority from %s", g_file_get_path (session->priv->authority_file));
-      
+
         drop_privileges = geteuid () == 0;
         if (drop_privileges)
             privileges_drop (session_get_user (SESSION (session)));
@@ -135,21 +147,10 @@ xsession_remove_authority (XSession *session)
 }
 
 static void
-xsession_run (Process *process)
-{
-    XSession *xsession = XSESSION (process);
-
-    if (!xsession->priv->authority_in_system_dir)
-        write_authority (xsession);
-
-    PROCESS_CLASS (xsession_parent_class)->run (process);
-}
-
-static void
-xsession_stop (Session *session)
+xsession_cleanup (Session *session)
 {
     xsession_remove_authority (XSESSION (session));
-    SESSION_CLASS (xsession_parent_class)->stop (session);
+    SESSION_CLASS (xsession_parent_class)->cleanup (session);
 }
 
 static void
@@ -176,12 +177,11 @@ static void
 xsession_class_init (XSessionClass *klass)
 {
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
-    ProcessClass *process_class = PROCESS_CLASS (klass);
     SessionClass *session_class = SESSION_CLASS (klass);
 
     session_class->start = xsession_start;
-    session_class->stop = xsession_stop;
-    process_class->run = xsession_run;
+    session_class->setup = xsession_setup;
+    session_class->cleanup = xsession_cleanup;
     object_class->finalize = xsession_finalize;
 
     g_type_class_add_private (klass, sizeof (XSessionPrivate));

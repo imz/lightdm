@@ -17,20 +17,18 @@
 
 #include "display.h"
 #include "configuration.h"
-#include "user.h"
-#include "pam-session.h"
 #include "ldm-marshal.h"
+#include "pam-session.h"
 #include "greeter.h"
-#include "xserver-local.h" // FIXME: Shouldn't know if it's an xserver
-#include "console-kit.h"
 
 enum {
+    CREATE_SESSION,
     STARTED,
     READY,
     SWITCH_TO_USER,
     SWITCH_TO_GUEST,
     GET_GUEST_USERNAME,
-    START_DISPLAY_SERVER,
+    DISPLAY_SERVER_READY,
     START_GREETER,
     START_SESSION,
     STOPPED,
@@ -82,12 +80,6 @@ struct DisplayPrivate
     /* Session process */
     Session *session;
 
-    /* The X display */
-    gchar *xdisplay;
-
-    /* TTY */
-    gchar *tty;
-
     /* Communication link to greeter */
     Greeter *greeter;
 
@@ -118,19 +110,14 @@ G_DEFINE_TYPE (Display, display, G_TYPE_OBJECT);
 static gboolean start_greeter_session (Display *display);
 static gboolean start_user_session (Display *display, PAMSession *authentication);
 
-// FIXME: Should be a construct property
-void
-display_set_display_server (Display *display, DisplayServer *display_server)
+Display *
+display_new (DisplayServer *display_server)
 {
-    g_return_if_fail (display != NULL);
-    g_return_if_fail (display->priv->display_server == NULL);
+    Display *display = g_object_new (DISPLAY_TYPE, NULL);
+
     display->priv->display_server = g_object_ref (display_server);
-    if (IS_XSERVER (display->priv->display_server))
-    {
-        display->priv->xdisplay = g_strdup (xserver_get_address (XSERVER (display->priv->display_server)));
-        if (IS_XSERVER_LOCAL (display->priv->display_server) && xserver_local_get_vt (XSERVER_LOCAL (display->priv->display_server)) >= 0)
-            display->priv->tty = g_strdup_printf ("/dev/tty%d", xserver_local_get_vt (XSERVER_LOCAL (display->priv->display_server)));
-    }
+
+    return display;
 }
 
 DisplayServer *
@@ -240,19 +227,6 @@ get_guest_username (Display *display)
 }
 
 static void
-session_exited_cb (Session *session, gint status, Display *display)
-{
-    if (status != 0)
-        g_debug ("Session exited with value %d", status);
-}
-
-static void
-session_terminated_cb (Session *session, gint signum, Display *display)
-{
-    g_debug ("Session terminated with signal %d", signum);
-}
-
-static void
 check_stopped (Display *display)
 {
     if (display->priv->stopping &&
@@ -314,7 +288,7 @@ autologin (Display *display, const gchar *username, gboolean start_greeter_if_fa
     display->priv->start_greeter_if_fail = start_greeter_if_fail;
 
     display->priv->in_user_session = TRUE;
-    authentication = pam_session_new (display->priv->pam_autologin_service, username, display->priv->xdisplay);
+    authentication = pam_session_new (display->priv->pam_autologin_service, username);
     g_signal_connect (authentication, "got-messages", G_CALLBACK (autologin_pam_message_cb), display);
     g_signal_connect (authentication, "authentication-result", G_CALLBACK (autologin_authentication_result_cb), display);
 
@@ -353,13 +327,6 @@ autologin_guest (Display *display, gboolean start_greeter_if_fail)
 static gboolean
 cleanup_after_session (Display *display)
 {
-    const gchar *cookie;
-
-    /* Close ConsoleKit session */
-    cookie = session_get_cookie (display->priv->session);
-    if (getuid () == 0 && cookie)
-        ck_close_session (cookie);
-
     g_signal_handlers_disconnect_matched (display->priv->session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, display);
     g_object_unref (display->priv->session);
     display->priv->session = NULL;
@@ -474,11 +441,9 @@ create_session (Display *display, PAMSession *authentication, const gchar *sessi
         }
     }
 
-    session = DISPLAY_GET_CLASS (display)->create_session (display);
+    g_signal_emit (display, signals[CREATE_SESSION], 0, &session);
     g_return_val_if_fail (session != NULL, NULL);
 
-    g_signal_connect (session, "exited", G_CALLBACK (session_exited_cb), display);
-    g_signal_connect (session, "terminated", G_CALLBACK (session_terminated_cb), display);
     if (is_greeter)
         g_signal_connect_after (session, "stopped", G_CALLBACK (greeter_session_stopped_cb), display);
     else
@@ -487,65 +452,30 @@ create_session (Display *display, PAMSession *authentication, const gchar *sessi
     session_set_authentication (session, authentication);
     session_set_command (session, command);
 
-    process_set_env (PROCESS (session), "DESKTOP_SESSION", session_name); // FIXME: Apparently deprecated?
-    process_set_env (PROCESS (session), "GDMSESSION", session_name); // FIXME: Not cross-desktop
+    session_set_env (session, "DESKTOP_SESSION", session_name); // FIXME: Apparently deprecated?
+    session_set_env (session, "GDMSESSION", session_name); // FIXME: Not cross-desktop
 
     process_set_log_file (PROCESS (session), log_filename);
-
-    /* Open ConsoleKit session */
-    if (getuid () == 0)
-    {
-        GVariantBuilder parameters;
-        User *user;
-        gchar *cookie = NULL;
-
-        user = pam_session_get_user (authentication);
-
-        g_variant_builder_init (&parameters, G_VARIANT_TYPE ("(a(sv))"));
-        g_variant_builder_open (&parameters, G_VARIANT_TYPE ("a(sv)"));
-        g_variant_builder_add (&parameters, "(sv)", "unix-user", g_variant_new_int32 (user_get_uid (user)));
-        g_variant_builder_add (&parameters, "(sv)", "session-type", g_variant_new_string (is_greeter ? "LoginWindow" : ""));
-        if (display->priv->xdisplay)
-        {
-            g_variant_builder_add (&parameters, "(sv)", "x11-display",
-                                   g_variant_new_string (display->priv->xdisplay));
-
-            if (display->priv->tty)
-                g_variant_builder_add (&parameters, "(sv)", "x11-display-device",
-                                       g_variant_new_string (display->priv->tty));
-        }
-        g_variant_builder_add (&parameters, "(sv)", "remote-host-name", g_variant_new_string (""));
-        g_variant_builder_add (&parameters, "(sv)", "is-local", g_variant_new_boolean (TRUE));
-
-        if (getuid () == 0)
-        {
-            cookie = ck_open_session (&parameters);
-            session_set_cookie (session, cookie);
-            g_free (cookie);
-        }
-    }
-    else
-        session_set_cookie (session, g_getenv ("XDG_SESSION_COOKIE"));
 
     /* Connect using the session bus */
     if (getuid () != 0)
     {
         if (g_getenv ("DBUS_SESSION_BUS_ADDRESS"))
-            process_set_env (PROCESS (session), "DBUS_SESSION_BUS_ADDRESS", g_getenv ("DBUS_SESSION_BUS_ADDRESS"));
-        process_set_env (PROCESS (session), "LDM_BUS", "SESSION");
+            session_set_env (session, "DBUS_SESSION_BUS_ADDRESS", g_getenv ("DBUS_SESSION_BUS_ADDRESS"));
+        session_set_env (session, "LDM_BUS", "SESSION");
         if (g_getenv ("LD_LIBRARY_PATH"))
-            process_set_env (PROCESS (session), "LD_LIBRARY_PATH", g_getenv ("LD_LIBRARY_PATH"));
+            session_set_env (session, "LD_LIBRARY_PATH", g_getenv ("LD_LIBRARY_PATH"));
         if (g_getenv ("PATH"))
-            process_set_env (PROCESS (session), "PATH", g_getenv ("PATH"));
+            session_set_env (session, "PATH", g_getenv ("PATH"));
     }
 
     /* Variables required for regression tests */
     if (g_getenv ("LIGHTDM_TEST_STATUS_SOCKET"))
     {
-        process_set_env (PROCESS (session), "LIGHTDM_TEST_STATUS_SOCKET", g_getenv ("LIGHTDM_TEST_STATUS_SOCKET"));
-        process_set_env (PROCESS (session), "LIGHTDM_TEST_CONFIG", g_getenv ("LIGHTDM_TEST_CONFIG"));
-        process_set_env (PROCESS (session), "LIGHTDM_TEST_HOME_DIR", g_getenv ("LIGHTDM_TEST_HOME_DIR"));
-        process_set_env (PROCESS (session), "LD_LIBRARY_PATH", g_getenv ("LD_LIBRARY_PATH"));
+        session_set_env (session, "LIGHTDM_TEST_STATUS_SOCKET", g_getenv ("LIGHTDM_TEST_STATUS_SOCKET"));
+        session_set_env (session, "LIGHTDM_TEST_CONFIG", g_getenv ("LIGHTDM_TEST_CONFIG"));
+        session_set_env (session, "LIGHTDM_TEST_HOME_DIR", g_getenv ("LIGHTDM_TEST_HOME_DIR"));
+        session_set_env (session, "LD_LIBRARY_PATH", g_getenv ("LD_LIBRARY_PATH"));
     }
 
     return session;
@@ -572,7 +502,7 @@ greeter_connected_cb (Greeter *greeter, Display *display)
 static PAMSession *
 greeter_start_authentication_cb (Greeter *greeter, const gchar *username, Display *display)
 {
-    return pam_session_new (display->priv->pam_service, username, display->priv->xdisplay);
+    return pam_session_new (display->priv->pam_service, username);
 }
 
 static gboolean
@@ -619,7 +549,7 @@ start_greeter_session (Display *display)
     g_debug ("Starting greeter session");
 
     if (getuid () != 0)
-        user = user_get_current ();
+        user = accounts_get_current_user ();
     else
     {
         gchar *greeter_user;
@@ -631,7 +561,7 @@ start_greeter_session (Display *display)
             return FALSE;
         }
 
-        user = user_get_by_name (greeter_user);
+        user = accounts_get_user_by_name (greeter_user);
         if (!user)
             g_debug ("Unable to start greeter, user %s does not exist", greeter_user);
         g_free (greeter_user);
@@ -641,15 +571,12 @@ start_greeter_session (Display *display)
     display->priv->in_user_session = FALSE;
 
     log_dir = config_get_string (config_get_instance (), "LightDM", "log-directory");
-    if (display->priv->xdisplay)
-        filename = g_strdup_printf ("%s-greeter.log", display->priv->xdisplay);
-    else
-        filename = g_strdup ("other-greeter.log");
+    filename = g_strdup_printf ("%s-greeter.log", display_server_get_name (display->priv->display_server));
     log_filename = g_build_filename (log_dir, filename, NULL);
     g_free (log_dir);
     g_free (filename);
 
-    authentication = pam_session_new (display->priv->pam_service, user_get_name (user), display->priv->xdisplay);
+    authentication = pam_session_new (display->priv->pam_service, user_get_name (user));
     g_object_unref (user);
 
     display->priv->session = create_session (display, authentication, display->priv->greeter_session, TRUE, log_filename);
@@ -766,11 +693,18 @@ display_server_stopped_cb (DisplayServer *server, Display *display)
 static void
 display_server_ready_cb (DisplayServer *display_server, Display *display)
 {
+    gboolean result;
     gboolean started_session = FALSE;
 
+    g_signal_emit (display, signals[DISPLAY_SERVER_READY], 0, &result);
+    if (!result)
+    {
+        display_stop (display);
+        return;
+    }
+
     /* Don't run any sessions on local terminals */
-    // FIXME: Make display_server_get_has_local_session
-    if (IS_XSERVER_LOCAL (display_server) && xserver_local_get_xdmcp_server (XSERVER_LOCAL (display_server)))
+    if (!display_server_get_start_local_sessions (display_server))
         return;
 
     /* Automatically log in */
@@ -804,26 +738,17 @@ display_server_ready_cb (DisplayServer *display_server, Display *display)
 gboolean
 display_start (Display *display)
 {
-    gboolean result;
-
     g_return_val_if_fail (display != NULL, FALSE);
 
     g_signal_connect (G_OBJECT (display->priv->display_server), "ready", G_CALLBACK (display_server_ready_cb), display);
     g_signal_connect (G_OBJECT (display->priv->display_server), "stopped", G_CALLBACK (display_server_stopped_cb), display);
-  
-    g_signal_emit (display, signals[START_DISPLAY_SERVER], 0, &result);
-    if (result)
+
+    if (!display_server_start (display->priv->display_server))
         return FALSE;
 
     g_signal_emit (display, signals[STARTED], 0);
 
     return TRUE;
-}
-
-static gboolean
-display_start_display_server (Display *display)
-{
-    return !display_server_start (display->priv->display_server);
 }
 
 void
@@ -840,7 +765,15 @@ display_stop (Display *display)
         if (display->priv->display_server)
             display_server_stop (display->priv->display_server);
         if (display->priv->session)
-            session_stop (display->priv->session);
+        {
+            if (process_get_is_running (PROCESS (display->priv->session)))
+                session_stop (display->priv->session);
+            else
+            {
+                g_object_unref (display->priv->session);
+                display->priv->session = NULL;
+            }
+        }
     }
 
     check_stopped (display);
@@ -857,21 +790,14 @@ display_get_is_ready (Display *display)
 void
 display_unlock (Display *display)
 {
-    const gchar *cookie;
-
     g_return_if_fail (display != NULL);
 
     if (!display->priv->session)
         return;
 
-    cookie = session_get_cookie (display->priv->session);
-    if (!cookie)
-        return;
-
     g_debug ("Unlocking display");
 
-    if (getuid () == 0)
-        ck_unlock_session (cookie);
+    session_unlock (display->priv->session);
 }
 
 static gboolean
@@ -900,12 +826,6 @@ display_init (Display *display)
     display->priv->pam_autologin_service = g_strdup ("lightdm-autologin");
 }
 
-static Session *
-display_create_session (Display *display)
-{
-    return NULL;
-}
-
 static void
 display_finalize (GObject *object)
 {
@@ -926,8 +846,6 @@ display_finalize (GObject *object)
     g_free (self->priv->autologin_user);
     g_free (self->priv->select_user_hint);
     g_free (self->priv->user_session);
-    g_free (self->priv->tty);
-    g_free (self->priv->xdisplay);
 
     G_OBJECT_CLASS (display_parent_class)->finalize (object);
 }
@@ -940,14 +858,20 @@ display_class_init (DisplayClass *klass)
     klass->switch_to_user = display_real_switch_to_user;
     klass->switch_to_guest = display_real_switch_to_guest;
     klass->get_guest_username = display_real_get_guest_username;
-    klass->create_session = display_create_session;
-    klass->start_display_server = display_start_display_server;
     klass->start_greeter = display_start_greeter;
     klass->start_session = display_start_session;
     object_class->finalize = display_finalize;
 
     g_type_class_add_private (klass, sizeof (DisplayPrivate));
 
+    signals[CREATE_SESSION] =
+        g_signal_new ("create-session",
+                      G_TYPE_FROM_CLASS (klass),
+                      G_SIGNAL_RUN_LAST,
+                      G_STRUCT_OFFSET (DisplayClass, create_session),
+                      NULL, NULL,
+                      ldm_marshal_OBJECT__VOID,
+                      SESSION_TYPE, 0);
     signals[STARTED] =
         g_signal_new ("started",
                       G_TYPE_FROM_CLASS (klass),
@@ -991,12 +915,12 @@ display_class_init (DisplayClass *klass)
                       NULL,
                       ldm_marshal_STRING__VOID,
                       G_TYPE_STRING, 0);
-    signals[START_DISPLAY_SERVER] =
-        g_signal_new ("start-display-server",
+    signals[DISPLAY_SERVER_READY] =
+        g_signal_new ("display-server-ready",
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
-                      G_STRUCT_OFFSET (DisplayClass, start_display_server),
-                      g_signal_accumulator_true_handled, NULL,
+                      G_STRUCT_OFFSET (DisplayClass, display_server_ready),
+                      NULL, NULL,
                       ldm_marshal_BOOLEAN__VOID,
                       G_TYPE_BOOLEAN, 0);
     signals[START_GREETER] =

@@ -1,9 +1,10 @@
 *.bak
 *.la
 *.lo
+*_vala.stamp
 .deps
 .libs
-*_vala.stamp
+stamp-h1
 Makefile
 Makefile.in
 Makefile.in.in
@@ -27,7 +28,7 @@ Makefile.in.in
 ./mkinstalldirs
 ./omf.make
 ./xmldocs.make
-doc/html/*
+doc/html
 doc/lightdm-gobject-*.*
 doc/*.stamp
 doc/tmpl/*-unused.sgml
@@ -43,6 +44,7 @@ liblightdm-gobject/*.vapi
 liblightdm-gobject/liblightdm-gobject-1.pc
 liblightdm-qt/liblightdm-qt-1.pc
 liblightdm-qt/*_moc.cpp
+m4/*
 po/*.gmo
 po/POTFILES
 po/stamp-it
@@ -60,6 +62,7 @@ tests/src/test-gobject-greeter
 tests/src/test-guest-account
 tests/src/test-qt-greeter
 tests/src/test-runner
+tests/src/test-script-hook
 tests/src/test-session
 tests/src/test-xserver
 utils/lightdm-set-defaults

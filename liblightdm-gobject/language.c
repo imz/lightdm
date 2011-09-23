@@ -48,9 +48,14 @@ update_languages (void)
         return;
 
     result = g_spawn_command_line_sync ("locale -a", &stdout_text, &stderr_text, &exit_status, &error);
-    if (!result || exit_status != 0)
-        g_warning ("Failed to get languages, locale -a returned %d: %s", exit_status, error->message);
-    else
+    if (error)
+    {
+        g_warning ("Failed to run 'locale -a': %s", error->message);
+        g_clear_error (&error);
+    }
+    else if (exit_status != 0)
+        g_warning ("Failed to get languages, locale -a returned %d", exit_status);
+    else if (result)
     {
         gchar **tokens;
         int i;
@@ -66,7 +71,7 @@ update_languages (void)
                 continue;
 
             /* Ignore the non-interesting languages */
-            if (strcmp (code, "C") == 0 || strcmp (code, "POSIX") == 0)
+            if (strcmp (code, "C") == 0 || g_str_has_prefix (code, "C.") || strcmp (code, "POSIX") == 0)
                 continue;
 
             language = g_object_new (LIGHTDM_TYPE_LANGUAGE, "code", code, NULL);
@@ -76,7 +81,6 @@ update_languages (void)
         g_strfreev (tokens);
     }
 
-    g_clear_error (&error);
     g_free (stdout_text);
     g_free (stderr_text);
 
@@ -90,13 +94,16 @@ update_languages (void)
  *
  * Return value: (transfer none): The current language or #NULL if no language.
  **/
-const LightDMLanguage *
+LightDMLanguage *
 lightdm_get_language (void)
 {
     const gchar *lang;
     GList *link;
 
     lang = g_getenv ("LANG");
+    if (!lang)
+        return NULL;
+
     for (link = lightdm_get_languages (); link; link = link->next)
     {
         LightDMLanguage *language = link->data;
@@ -160,7 +167,9 @@ lightdm_language_get_name (LightDMLanguage *language)
 #ifdef _NL_IDENTIFICATION_LANGUAGE
         priv->name = g_strdup (nl_langinfo (_NL_IDENTIFICATION_LANGUAGE));
 #else
-        priv->name = g_strdup ("Unknown");
+        priv->name = g_strdup (priv->code);
+        if (strchr (priv->name, '_'))
+            *strchr (priv->name, '_') = '\0';
 #endif
         setlocale(LC_ALL, current);
     }
@@ -192,7 +201,14 @@ lightdm_language_get_territory (LightDMLanguage *language)
 #ifdef _NL_IDENTIFICATION_TERRITORY
         priv->territory = g_strdup (nl_langinfo (_NL_IDENTIFICATION_TERRITORY));
 #else
-        priv->territory = g_strdup ("Unknown");
+        if (strchr (priv->code, '_'))
+        {
+            priv->territory = g_strdup (strchr (priv->code, '_') + 1);
+            if (strchr (priv->territory, '.'))
+                *strchr (priv->territory, '.') = '\0';
+        }      
+        else
+            priv->territory = g_strdup ("");        
 #endif
         setlocale(LC_ALL, current);
     }

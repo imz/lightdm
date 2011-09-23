@@ -10,16 +10,13 @@
  */
 
 #include "seat-xvnc.h"
-#include "xdisplay.h"
 #include "xserver-xvnc.h"
+#include "xsession.h"
 
 G_DEFINE_TYPE (SeatXVNC, seat_xvnc, SEAT_TYPE);
 
 struct SeatXVNCPrivate
 {
-    /* Remote display */
-    XDisplay *display;
-
     /* VNC connection */
     GSocket *connection;
 };
@@ -34,18 +31,59 @@ SeatXVNC *seat_xvnc_new (GSocket *connection)
     return seat;
 }
 
-static Display *
-seat_xvnc_add_display (Seat *seat)
+static DisplayServer *
+seat_xvnc_create_display_server (Seat *seat)
 {
     XServerXVNC *xserver;
 
     xserver = xserver_xvnc_new ();
     xserver_xvnc_set_stdin (xserver, g_socket_get_fd (SEAT_XVNC (seat)->priv->connection));
 
-    SEAT_XVNC (seat)->priv->display = xdisplay_new (XSERVER (xserver));
-    g_object_unref (xserver);
+    return DISPLAY_SERVER (xserver);
+}
 
-    return DISPLAY (SEAT_XVNC (seat)->priv->display);  
+static Session *
+seat_xvnc_create_session (Seat *seat, Display *display)
+{
+    XServerXVNC *xserver;
+    XSession *session;
+    GInetSocketAddress *address;
+    gchar *hostname;
+
+    xserver = XSERVER_XVNC (display_get_display_server (display));
+
+    session = xsession_new (XSERVER (xserver));
+    address = G_INET_SOCKET_ADDRESS (g_socket_get_remote_address (SEAT_XVNC (seat)->priv->connection, NULL));
+    hostname = g_inet_address_to_string (g_inet_socket_address_get_address (address));
+    session_set_console_kit_parameter (SESSION (session), "remote-host-name", g_variant_new_string (hostname));
+    g_free (hostname);
+    session_set_console_kit_parameter (SESSION (session), "is-local", g_variant_new_boolean (FALSE));
+
+    return SESSION (session);
+}
+
+static void
+seat_xvnc_run_script (Seat *seat, Display *display, Process *script)
+{
+    XServerXVNC *xserver;
+    GInetSocketAddress *address;
+    gchar *hostname;
+    gchar *path;
+
+    xserver = XSERVER_XVNC (display_get_display_server (display));
+
+    address = G_INET_SOCKET_ADDRESS (g_socket_get_remote_address (SEAT_XVNC (seat)->priv->connection, NULL));
+    hostname = g_inet_address_to_string (g_inet_socket_address_get_address (address));
+    path = xserver_xvnc_get_authority_file_path (xserver);
+
+    process_set_env (script, "REMOTE_HOST", hostname);
+    process_set_env (script, "DISPLAY", xserver_get_address (XSERVER (xserver)));
+    process_set_env (script, "XAUTHORITY", path);
+
+    g_free (hostname);
+    g_free (path);
+
+    SEAT_CLASS (seat_xvnc_parent_class)->run_script (seat, display, script);
 }
 
 static void
@@ -67,8 +105,6 @@ seat_xdmcp_session_finalize (GObject *object)
 
     self = SEAT_XVNC (object);
 
-    if (self->priv->display)
-        g_object_unref (self->priv->display);
     g_object_unref (self->priv->connection);
 
     G_OBJECT_CLASS (seat_xvnc_parent_class)->finalize (object);
@@ -80,7 +116,9 @@ seat_xvnc_class_init (SeatXVNCClass *klass)
     SeatClass *seat_class = SEAT_CLASS (klass);
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
-    seat_class->add_display = seat_xvnc_add_display;
+    seat_class->create_display_server = seat_xvnc_create_display_server;
+    seat_class->create_session = seat_xvnc_create_session;
+    seat_class->run_script = seat_xvnc_run_script;
     seat_class->display_removed = seat_xvnc_display_removed;
     object_class->finalize = seat_xdmcp_session_finalize;
 

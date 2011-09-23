@@ -14,9 +14,6 @@
 #include <sys/wait.h>
 
 #include "seat.h"
-#include "display.h"
-#include "xserver.h" // FIXME: Shouldn't know if it's an xserver
-#include "xserver-local.h" // FIXME: Shouldn't know if it's an xserver
 #include "guest-account.h"
 
 enum {
@@ -237,107 +234,59 @@ display_get_guest_username_cb (Display *display, Seat *seat)
 }
 
 static gboolean
-run_script (Display *display, const gchar *script_name, User *user)
+run_script (Seat *seat, Display *display, const gchar *script_name, User *user)
 {
-    gboolean result;
-    GPtrArray *env_array;
-    gchar **argv, **envp;
-    gchar *env, *command;
-    gint exit_status;
-    DisplayServer *display_server;
-    GError *error = NULL;
+    Process *process;
+    gboolean result = FALSE;
 
-    if (getuid () != 0)
-        return TRUE;
-
-    if (!(g_file_test (script_name, G_FILE_TEST_IS_REGULAR) &&
-          g_file_test (script_name, G_FILE_TEST_IS_EXECUTABLE)))
-    {
-        g_warning ("Could not execute %s", script_name);
-        return FALSE;
-    }
-
-    result = g_shell_parse_argv (script_name, NULL, &argv, &error);
-    if (error)
-        g_warning ("Could not parse %s: %s", script_name, error->message);
-    if (!result)
-        return FALSE;
-
-    env_array = g_ptr_array_sized_new (10);
-    if (!env_array)
-        return FALSE;
-
-    g_ptr_array_add (env_array, g_strdup ("SHELL=/bin/sh"));
-    g_ptr_array_add (env_array, g_strdup ("PATH=/usr/local/bin:/usr/bin:/bin"));
-
+    process = process_new ();
+    process_set_command (process, script_name);
+    process_set_env (process, "SHELL", "/bin/sh");
+    process_set_env (process, "PATH", "/usr/local/bin:/usr/bin:/bin");
     if (user)
     {
-        g_ptr_array_add (env_array, g_strdup_printf ("USER=%s", user_get_name (user)));
-        g_ptr_array_add (env_array, g_strdup_printf ("USERNAME=%s", user_get_name (user)));
-        g_ptr_array_add (env_array, g_strdup_printf ("LOGNAME=%s", user_get_name (user)));
-        g_ptr_array_add (env_array, g_strdup_printf ("HOME=%s", user_get_home_directory (user)));
+        process_set_env (process, "USER", user_get_name (user));
+        process_set_env (process, "USERNAME", user_get_name (user));
+        process_set_env (process, "LOGNAME", user_get_name (user));
+        process_set_env (process, "HOME", user_get_home_directory (user));
     }
     else
-        g_ptr_array_add (env_array, g_strdup ("HOME=/"));
+        process_set_env (process, "HOME", "/");
 
-    display_server = display_get_display_server (display);
-    // FIXME: This should be done in a different layer
-    if (IS_XSERVER (display_server))
+    /* Variables required for regression tests */
+    if (g_getenv ("LIGHTDM_TEST_STATUS_SOCKET"))
     {
-        XServer *xserver = XSERVER (display_server);
-        gchar *hostname, *xauthority_path;
+        process_set_env (process, "LIGHTDM_TEST_STATUS_SOCKET", g_getenv ("LIGHTDM_TEST_STATUS_SOCKET"));
+        process_set_env (process, "LIGHTDM_TEST_CONFIG", g_getenv ("LIGHTDM_TEST_CONFIG"));
+        process_set_env (process, "LIGHTDM_TEST_HOME_DIR", g_getenv ("LIGHTDM_TEST_HOME_DIR"));
+        process_set_env (process, "LD_LIBRARY_PATH", g_getenv ("LD_LIBRARY_PATH"));
+        process_set_env (process, "PATH", g_getenv ("PATH"));
+    }
 
-        g_ptr_array_add (env_array, g_strdup_printf ("DISPLAY=%s", xserver_get_address (xserver)));
+    SEAT_GET_CLASS (seat)->run_script (seat, display, process);
 
-        if (!IS_XSERVER_LOCAL (xserver) &&
-            (hostname = xserver_get_hostname (xserver)))
+    if (process_start (process))
+    {
+        int exit_status;
+
+        process_wait (process);
+
+        exit_status = process_get_exit_status (process);
+        if (WIFEXITED (exit_status))
         {
-            g_ptr_array_add (env_array, g_strdup_printf ("REMOTE_HOST=%s", hostname));
-            g_free (hostname);
-        }
-
-        if (IS_XSERVER_LOCAL (xserver) &&
-            (xauthority_path = xserver_local_get_authority_file_path (XSERVER_LOCAL (xserver))))
-        {
-            g_ptr_array_add (env_array, g_strdup_printf ("XAUTHORITY=%s", xauthority_path));
-            g_free (xauthority_path);
+            g_debug ("Exit status of %s: %d", script_name, WEXITSTATUS (exit_status));
+            result = WEXITSTATUS (exit_status) == EXIT_SUCCESS;
         }
     }
 
-    g_ptr_array_add (env_array, NULL);
-    envp = (gchar **) g_ptr_array_free (env_array, FALSE);
+    g_object_unref (process);
 
-    env = g_strjoinv (" ", envp);
-    command = g_strjoin (" ", env, script_name, NULL);
-    g_debug ("Executing script: %s", command);
-    g_free (env);
-    g_free (command);
-    result = g_spawn_sync (NULL,
-                           argv,
-                           envp,
-                           G_SPAWN_SEARCH_PATH,
-                           NULL,
-                           NULL,
-                           NULL,
-                           NULL,
-                           &exit_status,
-                           &error);
-    if (error)
-        g_warning ("Error executing %s: %s", script_name, error->message);
-    g_clear_error (&error);
-    g_strfreev (argv);
-    g_strfreev (envp);
-  
-    if (!result)
-        return FALSE;
+    return result;
+}
 
-    if (WIFEXITED (exit_status))
-    {
-        g_debug ("Exit status of %s: %d", script_name, WEXITSTATUS (exit_status));
-        return WEXITSTATUS (exit_status) == EXIT_SUCCESS;
-    }
-
-    return FALSE;
+static void
+seat_real_run_script (Seat *seat, Display *display, Process *process)
+{  
 }
 
 static void
@@ -355,18 +304,24 @@ emit_upstart_signal (const gchar *signal)
 }
 
 static gboolean
-display_start_display_server_cb (Display *display, Seat *seat)
+display_display_server_ready_cb (Display *display, Seat *seat)
 {
     const gchar *script;
 
     /* Run setup script */
     script = seat_get_string_property (seat, "display-setup-script");
-    if (script && !run_script (display, script, NULL))
-        return TRUE;
+    if (script && !run_script (seat, display, script, NULL))
+        return FALSE;
 
     emit_upstart_signal ("login-session-start");
 
-    return FALSE;
+    return TRUE;
+}
+
+static Session *
+display_create_session_cb (Display *display, Seat *seat)
+{
+    return SEAT_GET_CLASS (seat)->create_session (seat, display);
 }
 
 static gboolean
@@ -379,7 +334,7 @@ display_start_greeter_cb (Display *display, Seat *seat)
 
     script = seat_get_string_property (seat, "greeter-setup-script");
     if (script)
-        return !run_script (display, script, session_get_user (session));
+        return !run_script (seat, display, script, session_get_user (session));
     else
         return FALSE;
 }
@@ -394,7 +349,7 @@ display_start_session_cb (Display *display, Seat *seat)
 
     script = seat_get_string_property (seat, "session-setup-script");
     if (script)
-        return !run_script (display, script, session_get_user (session));
+        return !run_script (seat, display, script, session_get_user (session));
     else
         return FALSE;
 }
@@ -421,7 +376,7 @@ session_stopped_cb (Session *session, Seat *seat)
     /* Cleanup */
     script = seat_get_string_property (seat, "session-cleanup-script");
     if (script)
-        run_script (display, script, session_get_user (session));
+        run_script (seat, display, script, session_get_user (session));
 
     if (seat->priv->guest_username && strcmp (user_get_name (session_get_user (session)), seat->priv->guest_username) == 0)
     {
@@ -474,7 +429,8 @@ display_stopped_cb (Display *display, Seat *seat)
 static gboolean
 switch_to_user_or_start_greeter (Seat *seat, const gchar *username, gboolean is_guest, const gchar *session_name, gboolean autologin)
 {
-    Display *display = NULL;
+    Display *display;
+    DisplayServer *display_server;
 
     /* Switch to existing if it exists */
     if (switch_to_user (seat, username, FALSE))
@@ -500,11 +456,15 @@ switch_to_user_or_start_greeter (Seat *seat, const gchar *username, gboolean is_
             g_debug ("Starting new display for greeter");
     }
 
-    display = SEAT_GET_CLASS (seat)->add_display (seat);
+    display_server = SEAT_GET_CLASS (seat)->create_display_server (seat);
+    display = display_new (display_server);
+    g_object_unref (display_server);
+
+    g_signal_connect (display, "display-server-ready", G_CALLBACK (display_display_server_ready_cb), seat);  
     g_signal_connect (display, "switch-to-user", G_CALLBACK (display_switch_to_user_cb), seat);
     g_signal_connect (display, "switch-to-guest", G_CALLBACK (display_switch_to_guest_cb), seat);
     g_signal_connect (display, "get-guest-username", G_CALLBACK (display_get_guest_username_cb), seat);
-    g_signal_connect (display, "start-display-server", G_CALLBACK (display_start_display_server_cb), seat);
+    g_signal_connect (display, "create-session", G_CALLBACK (display_create_session_cb), seat);
     g_signal_connect (display, "start-greeter", G_CALLBACK (display_start_greeter_cb), seat);
     g_signal_connect (display, "start-session", G_CALLBACK (display_start_session_cb), seat);
     g_signal_connect_after (display, "start-session", G_CALLBACK (display_session_started_cb), seat);
@@ -617,12 +577,6 @@ seat_real_start (Seat *seat)
         return switch_to_user_or_start_greeter (seat, NULL, FALSE, NULL, FALSE);
 }
 
-static Display *
-seat_real_add_display (Seat *seat)
-{
-    return NULL;
-}
-
 static void
 seat_real_set_active_display (Seat *seat, Display *display)
 {
@@ -688,8 +642,8 @@ seat_class_init (SeatClass *klass)
 
     klass->setup = seat_real_setup;
     klass->start = seat_real_start;
-    klass->add_display = seat_real_add_display;
     klass->set_active_display = seat_real_set_active_display;
+    klass->run_script = seat_real_run_script;
     klass->stop = seat_real_stop;
 
     object_class->finalize = seat_finalize;

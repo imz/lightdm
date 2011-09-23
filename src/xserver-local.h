@@ -35,6 +35,10 @@ typedef struct
     void (*ready)(XServerLocal *server);
 } XServerLocalClass;
 
+guint xserver_local_get_unused_display_number (void);
+
+void xserver_local_release_display_number (guint display_number);
+
 GType xserver_local_get_type (void);
 
 XServerLocal *xserver_local_new (void);
@@ -44,6 +48,8 @@ void xserver_local_set_command (XServerLocal *server, const gchar *command);
 void xserver_local_set_config (XServerLocal *server, const gchar *path);
 
 void xserver_local_set_layout (XServerLocal *server, const gchar *layout);
+
+void xserver_local_set_allow_tcp (XServerLocal *server, gboolean allow_tcp);
 
 void xserver_local_set_xdmcp_server (XServerLocal *server, const gchar *hostname);
 

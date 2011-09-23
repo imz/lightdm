@@ -15,7 +15,7 @@
 #include <glib-object.h>
 #include <security/pam_appl.h>
 
-#include "user.h"
+#include "accounts.h"
 
 G_BEGIN_DECLS
 
@@ -46,13 +46,17 @@ void pam_session_set_use_pam (void);
 
 void pam_session_set_use_passwd_file (gchar *passwd_file);
 
-PAMSession *pam_session_new (const gchar *service, const gchar *username, const gchar *xdisplay);
+PAMSession *pam_session_new (const gchar *service, const gchar *username);
 
 gboolean pam_session_authenticate (PAMSession *session, GError **error);
 
 gboolean pam_session_get_is_authenticated (PAMSession *session);
 
+gboolean pam_session_set_item (PAMSession *session, int item_type, const gchar *value);
+
 gboolean pam_session_open (PAMSession *session);
+
+gboolean pam_session_setup (PAMSession *session);
 
 gboolean pam_session_get_in_session (PAMSession *session);
 
@@ -72,7 +76,7 @@ void pam_session_cancel (PAMSession *session);
 
 const gchar *pam_session_getenv (PAMSession *session, const gchar *name);
 
-gchar **pam_session_get_envlist(PAMSession *session);
+gchar **pam_session_get_envlist (PAMSession *session);
 
 void pam_session_close (PAMSession *session);
 

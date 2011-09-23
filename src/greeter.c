@@ -68,7 +68,8 @@ typedef enum
     GREETER_MESSAGE_AUTHENTICATE_AS_GUEST,
     GREETER_MESSAGE_CONTINUE_AUTHENTICATION,
     GREETER_MESSAGE_START_SESSION,
-    GREETER_MESSAGE_CANCEL_AUTHENTICATION
+    GREETER_MESSAGE_CANCEL_AUTHENTICATION,
+    GREETER_MESSAGE_SET_LANGUAGE
 } GreeterMessage;
 
 /* Messages from the server to the greeter */
@@ -209,6 +210,7 @@ pam_messages_cb (PAMSession *authentication, int num_msg, const struct pam_messa
     guint32 size;
     guint8 message[MAX_MESSAGE_LENGTH];
     gsize offset = 0;
+    int n_prompts = 0;
 
     /* Respond to d-bus query with messages */
     g_debug ("Prompt greeter with %d message(s)", num_msg);
@@ -224,8 +226,20 @@ pam_messages_cb (PAMSession *authentication, int num_msg, const struct pam_messa
     {
         write_int (message, MAX_MESSAGE_LENGTH, msg[i]->msg_style, &offset);
         write_string (message, MAX_MESSAGE_LENGTH, msg[i]->msg, &offset);
+
+        if (msg[i]->msg_style == PAM_PROMPT_ECHO_OFF || msg[i]->msg_style == PAM_PROMPT_ECHO_ON)
+            n_prompts++;
     }
-    write_message (greeter, message, offset);  
+    write_message (greeter, message, offset);
+
+    /* Continue immediately if nothing to respond with */
+    // FIXME: Should probably give the greeter a chance to ack the message
+    if (n_prompts == 0)
+    {
+        struct pam_response *response;
+        response = calloc (num_msg, sizeof (struct pam_response));
+        pam_session_respond (greeter->priv->authentication, response);
+    }
 }
 
 static void
@@ -324,7 +338,7 @@ handle_continue_authentication (Greeter *greeter, gchar **secrets)
     int num_messages;
     const struct pam_message **messages;
     struct pam_response *response;
-    int i, j, n_secrets = 0;
+    int i, j, n_prompts = 0;
 
     /* Not in authentication */
     if (greeter->priv->authentication == NULL)
@@ -338,9 +352,9 @@ handle_continue_authentication (Greeter *greeter, gchar **secrets)
     {
         int msg_style = messages[i]->msg_style;
         if (msg_style == PAM_PROMPT_ECHO_OFF || msg_style == PAM_PROMPT_ECHO_ON)
-            n_secrets++;
+            n_prompts++;
     }
-    if (g_strv_length (secrets) != n_secrets)
+    if (g_strv_length (secrets) != n_prompts)
     {
         pam_session_cancel (greeter->priv->authentication);
         return;
@@ -349,7 +363,7 @@ handle_continue_authentication (Greeter *greeter, gchar **secrets)
     g_debug ("Continue authentication");
 
     /* Build response */
-    response = calloc (num_messages, sizeof (struct pam_response));  
+    response = calloc (num_messages, sizeof (struct pam_response));
     for (i = 0, j = 0; i < num_messages; i++)
     {
         int msg_style = messages[i]->msg_style;
@@ -408,6 +422,29 @@ handle_start_session (Greeter *greeter, const gchar *session)
     }
 }
 
+static void
+handle_set_language (Greeter *greeter, const gchar *language)
+{
+    User *user;
+
+    if (!greeter->priv->guest_account_authenticated && !pam_session_get_is_authenticated (greeter->priv->authentication))
+    {
+        g_debug ("Ignoring set language request, user is not authorized");
+        return;
+    }
+
+    // FIXME: Could use this
+    if (greeter->priv->guest_account_authenticated)
+    {
+        g_debug ("Ignoring set language request for guest user");
+        return;
+    }
+
+    g_debug ("Greeter sets language %s", language);
+    user = pam_session_get_user (greeter->priv->authentication);
+    user_set_language (user, language);
+}
+
 static guint32
 read_int (Greeter *greeter, gsize *offset)
 {
@@ -453,7 +490,7 @@ read_cb (GIOChannel *source, GIOCondition condition, gpointer data)
     GIOStatus status;
     int id, n_secrets, i;
     guint32 sequence_number;
-    gchar *version, *username, *session_name;
+    gchar *version, *username, *session_name, *language;
     gchar **secrets;
     GError *error = NULL;
 
@@ -539,6 +576,11 @@ read_cb (GIOChannel *source, GIOCondition condition, gpointer data)
         handle_start_session (greeter, session_name);
         g_free (session_name);
         break;
+    case GREETER_MESSAGE_SET_LANGUAGE:
+        language = read_string (greeter, &offset);
+        handle_set_language (greeter, language);
+        g_free (language);
+        break;
     default:
         g_warning ("Unknown message from greeter: %d", id);
         break;
@@ -572,12 +614,12 @@ greeter_start (Greeter *greeter)
 
     fd = from_greeter_pipe[1];
     value = g_strdup_printf ("%d", fd);
-    process_set_env (PROCESS (greeter->priv->session), "LIGHTDM_TO_SERVER_FD", value);
+    session_set_env (greeter->priv->session, "LIGHTDM_TO_SERVER_FD", value);
     g_free (value);
 
     fd = to_greeter_pipe[0];
     value = g_strdup_printf ("%d", fd);
-    process_set_env (PROCESS (greeter->priv->session), "LIGHTDM_FROM_SERVER_FD", value);
+    session_set_env (greeter->priv->session, "LIGHTDM_FROM_SERVER_FD", value);
     g_free (value);
 
     return TRUE;

@@ -33,7 +33,10 @@ struct XServerLocalPrivate
 
     /* Server layout to use */
     gchar *layout;
-  
+
+    /* TRUE if TCP/IP connections are allowed */
+    gboolean allow_tcp;
+
     /* Authority file */
     GFile *authority_file;
 
@@ -58,37 +61,70 @@ struct XServerLocalPrivate
 
 G_DEFINE_TYPE (XServerLocal, xserver_local, XSERVER_TYPE);
 
-static guint
-get_free_display_number (void)
+static GList *display_numbers = NULL;
+
+static gboolean
+display_number_in_use (guint display_number)
+{
+    GList *link;
+    gchar *path;
+    gboolean result;
+
+    for (link = display_numbers; link; link = link->next)
+    {
+        guint number = GPOINTER_TO_UINT (link->data);
+        if (number == display_number)
+            return TRUE;
+    }
+
+    path = g_strdup_printf ("/tmp/.X%d-lock", display_number);
+    result = g_file_test (path, G_FILE_TEST_EXISTS);
+    g_free (path);
+
+    return result;
+}
+
+guint
+xserver_local_get_unused_display_number (void)
 {
     guint number;
 
     number = config_get_integer (config_get_instance (), "LightDM", "minimum-display-number");
-    while (TRUE)
-    {
-        gchar *path;
-        gboolean result;
-  
-        path = g_strdup_printf ("/tmp/.X%d-lock", number);
-        result = g_file_test (path, G_FILE_TEST_EXISTS);
-        g_free (path);
-
-        if (!result)
-            break;
-
+    while (display_number_in_use (number))
         number++;
-    }
-  
+
+    display_numbers = g_list_append (display_numbers, GUINT_TO_POINTER (number));
+
     return number;
+}
+
+void
+xserver_local_release_display_number (guint display_number)
+{
+    GList *link;
+    for (link = display_numbers; link; link = link->next)
+    {
+        guint number = GPOINTER_TO_UINT (link->data);
+        if (number == display_number)
+        {
+            display_numbers = g_list_remove_link (display_numbers, link);
+            return;
+        }
+    }
 }
 
 XServerLocal *
 xserver_local_new (void)
 {
     XServerLocal *self = g_object_new (XSERVER_LOCAL_TYPE, NULL);
+    gchar *name;
 
-    xserver_set_display_number (XSERVER (self), get_free_display_number ());
-  
+    xserver_set_display_number (XSERVER (self), xserver_local_get_unused_display_number ());
+
+    name = g_strdup_printf ("x-%d", xserver_get_display_number (XSERVER (self)));
+    display_server_set_name (DISPLAY_SERVER (self), name);
+    g_free (name);
+
     /* Replace Plymouth if it is running */
     if (plymouth_get_is_active () && plymouth_has_active_vt ())
     {
@@ -136,11 +172,19 @@ xserver_local_set_layout (XServerLocal *server, const gchar *layout)
 }
 
 void
+xserver_local_set_allow_tcp (XServerLocal *server, gboolean allow_tcp)
+{
+    g_return_if_fail (server != NULL);
+    server->priv->allow_tcp = allow_tcp;
+}
+
+void
 xserver_local_set_xdmcp_server (XServerLocal *server, const gchar *hostname)
 {
     g_return_if_fail (server != NULL);
     g_free (server->priv->xdmcp_server);
     server->priv->xdmcp_server = g_strdup (hostname);
+    display_server_set_start_local_sessions (DISPLAY_SERVER (server), hostname == NULL);
 }
 
 const gchar *
@@ -252,6 +296,8 @@ stopped_cb (Process *process, XServerLocal *server)
     g_object_unref (server->priv->xserver_process);
     server->priv->xserver_process = NULL;
 
+    xserver_local_release_display_number (xserver_get_display_number (XSERVER (server)));
+  
     if (xserver_get_authority (XSERVER (server)) && server->priv->authority_file)
     {
         GError *error = NULL;
@@ -344,7 +390,7 @@ xserver_local_start (DisplayServer *display_server)
     g_signal_connect (server->priv->xserver_process, "stopped", G_CALLBACK (stopped_cb), server);
 
     /* Setup logging */
-    filename = g_strdup_printf ("%s.log", xserver_get_address (XSERVER (server)));
+    filename = g_strdup_printf ("%s.log", display_server_get_name (display_server));
     dir = config_get_string (config_get_instance (), "LightDM", "log-directory");
     path = g_build_filename (dir, filename, NULL);
     g_debug ("Logging to %s", path);
@@ -393,7 +439,7 @@ xserver_local_start (DisplayServer *display_server)
         if (server->priv->xdmcp_key)
             g_string_append_printf (command, " -cookie %s", server->priv->xdmcp_key);
     }
-    else
+    else if (!server->priv->allow_tcp)
         g_string_append (command, " -nolisten tcp");
 
     if (server->priv->vt >= 0)
@@ -429,7 +475,7 @@ xserver_local_start (DisplayServer *display_server)
         process_set_env (server->priv->xserver_process, "LD_LIBRARY_PATH", g_getenv ("LD_LIBRARY_PATH"));
     }
 
-    process_set_user (server->priv->xserver_process, user_get_current ());
+    process_set_user (server->priv->xserver_process, accounts_get_current_user ());
     result = process_start (server->priv->xserver_process);
 
     if (result)
