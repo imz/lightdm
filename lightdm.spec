@@ -5,8 +5,8 @@
 %def_enable qt
 
 Name: lightdm
-Version: 0.9.7
-Release: alt2
+Version: 0.9.8
+Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -230,6 +230,9 @@ printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Fri Sep 23 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.8-alt1
+- 0.9.8
+
 * Tue Sep 20 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.7-alt2
 - add alternatives for greeters
 - fix dir for lightdm-set-defaults
