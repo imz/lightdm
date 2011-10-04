@@ -5,7 +5,7 @@
 %def_enable qt
 
 Name: lightdm
-Version: 0.9.8
+Version: 1.0.0
 Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
@@ -230,6 +230,10 @@ printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Tue Oct 04 2011 Alexey Shabalin <shaba@altlinux.ru> 1.0.0-alt1
+- 1.0.0
+- fix PATH env
+
 * Fri Sep 23 2011 Alexey Shabalin <shaba@altlinux.ru> 0.9.8-alt1
 - 0.9.8
 
