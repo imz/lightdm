@@ -269,7 +269,10 @@ session_start (Session *session)
     g_debug ("Launching session");
 
     user = pam_session_get_user (session->priv->authentication);
-    session_set_env (session, "PATH", "/usr/local/bin:/usr/bin:/bin");
+    if (user_get_uid (user) == 0)
+      session_set_env (session, "PATH", "/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin");
+    else
+      session_set_env (session, "PATH", "/bin:/usr/bin:/usr/local/bin:/usr/games:/usr/local/games");
     session_set_env (session, "USER", user_get_name (user));
     session_set_env (session, "USERNAME", user_get_name (user)); // FIXME: Is this required?
     session_set_env (session, "HOME", user_get_home_directory (user));
@@ -293,19 +296,6 @@ session_real_start (Session *session)
     }
     process_set_command (PROCESS (session), absolute_command);
     g_free (absolute_command);
-
-    /* Insert our own utility directory to PATH
-     * This is to provide gdmflexiserver which provides backwards compatibility with GDM.
-     * Must be done after set_env_from_authentication because that often sets PATH.
-     * This can be removed when this is no longer required.
-     */
-    orig_path = session_get_env (session, "PATH");
-    if (orig_path)
-    {
-        gchar *path = g_strdup_printf ("%s:%s", PKGLIBEXEC_DIR, orig_path);
-        session_set_env (session, "PATH", path);
-        g_free (path);
-    }
 
     pam_session_open (session->priv->authentication);
 
