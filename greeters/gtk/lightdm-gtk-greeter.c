@@ -657,6 +657,7 @@ main (int argc, char **argv)
     const GList *items, *item;
     GtkTreeIter iter;
     GtkCellRenderer *renderer;
+    GtkWidget *menuitem, *hbox, *image;
     gchar *value;
     GdkPixbuf *background_pixbuf = NULL;
     GdkColor background_color;
@@ -807,6 +808,23 @@ main (int argc, char **argv)
 
     gtk_label_set_text (GTK_LABEL (gtk_builder_get_object (builder, "hostname_label")), lightdm_get_hostname ());
 
+    /* Glade can't handle custom menuitems, so set them up manually */
+    menuitem = GTK_WIDGET (gtk_builder_get_object (builder, "power_menuitem"));
+    hbox = gtk_hbox_new (FALSE, 0);
+    gtk_widget_show (hbox);
+    gtk_container_add (GTK_CONTAINER (menuitem), hbox);
+    image = gtk_image_new_from_icon_name ("system-shutdown", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image);
+    gtk_box_pack_start (GTK_BOX (hbox), image, FALSE, TRUE, 0);
+
+    menuitem = GTK_WIDGET (gtk_builder_get_object (builder, "a11y_menuitem"));
+    hbox = gtk_hbox_new (FALSE, 0);
+    gtk_widget_show (hbox);
+    gtk_container_add (GTK_CONTAINER (menuitem), hbox);
+    image = gtk_image_new_from_icon_name ("accessibility", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image);
+    gtk_box_pack_start (GTK_BOX (hbox), image, FALSE, TRUE, 0);
+
     if (!lightdm_get_can_suspend ())
         gtk_widget_hide (GTK_WIDGET (gtk_builder_get_object (builder, "suspend_menuitem")));
     if (!lightdm_get_can_hibernate ())
@@ -885,7 +903,8 @@ main (int argc, char **argv)
     gtk_window_resize (panel_window, monitor_geometry.width, allocation.height);
     gtk_window_move (panel_window, monitor_geometry.x, monitor_geometry.y);
 
-    gtk_window_present (login_window);
+    gtk_widget_show (GTK_WIDGET (login_window));
+    gdk_window_focus (gtk_widget_get_window (GTK_WIDGET (login_window)), GDK_CURRENT_TIME);
 
     gtk_main ();
 
