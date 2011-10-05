@@ -6,7 +6,7 @@
 
 Name: lightdm
 Version: 1.0.0
-Release: alt1
+Release: alt2
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -230,6 +230,9 @@ printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Wed Oct 05 2011 Alexey Shabalin <shaba@altlinux.ru> 1.0.0-alt2
+- set ignore unknown options
+
 * Tue Oct 04 2011 Alexey Shabalin <shaba@altlinux.ru> 1.0.0-alt1
 - 1.0.0
 - fix PATH env
