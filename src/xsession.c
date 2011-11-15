@@ -104,10 +104,26 @@ xsession_setup (Session *session)
              * incorrectly written as root in a buggy version of LightDM */
             if (getuid () == 0)
             {
+                int fd = -1;
                 int result;
-                result = lchown (path, user_get_uid (session_get_user (session)), user_get_gid (session_get_user (session)));
+                struct stat st_buf;
+
+                fd = open (path, O_RDONLY|O_NOFOLLOW);
+                if (fd == -1)
+                    goto out;
+
+                if (fstat (fd, &st_buf) != 0)
+                    goto out;
+
+                if ((!S_ISREG (st_buf.st_mode)) || (st_buf.st_nlink > 1))
+                    goto out;
+
+                result = fchown (fd, user_get_uid (session_get_user (session)), user_get_gid (session_get_user (session)));
                 if (result < 0 && errno != ENOENT)
-                    g_warning ("Failed to correct ownership of %s: %s", path, strerror (errno));                
+                    g_warning ("Failed to correct ownership of %s: %s", path, strerror (errno));
+out:
+                if (fd > 0)
+                    close(fd);
             }
         }
 
