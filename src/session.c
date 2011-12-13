@@ -217,26 +217,6 @@ set_locale (Session *session)
     }
 }
 
-/* Insert our own utility directory to PATH
- * This is to provide gdmflexiserver which provides backwards compatibility
- * with GDM.
- * Must be done after set_env_from_authentication because PAM sets PATH.
- * This can be removed when this is no longer required.
- */
-static void
-insert_utility_path (Session *session)
-{
-    const gchar *orig_path;
-
-    orig_path = session_get_env (session, "PATH");
-    if (orig_path)
-    {
-        gchar *path = g_strdup_printf ("%s:%s", PKGLIBEXEC_DIR, orig_path);
-        session_set_env (session, "PATH", path);
-        g_free (path);
-    }
-}
-
 gboolean
 session_start (Session *session)
 {
@@ -440,7 +420,6 @@ session_run (Process *process)
     pam_session_setup (session->priv->authentication);
     set_env_from_authentication (session, session->priv->authentication);
     set_locale (session);
-    insert_utility_path (session);
 
     PROCESS_CLASS (session_parent_class)->run (process);
 }
