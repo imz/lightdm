@@ -5,8 +5,8 @@
 %def_enable qt
 
 Name: lightdm
-Version: 1.0.0
-Release: alt2
+Version: 1.0.6
+Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -230,6 +230,11 @@ printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Tue Dec 13 2011 Alexey Shabalin <shaba@altlinux.ru> 1.0.6-alt1
+- 1.0.6
+- fixed CVE-2011-4105, CVE-2011-3153
+- patches from ubuntu
+
 * Wed Oct 05 2011 Alexey Shabalin <shaba@altlinux.ru> 1.0.0-alt2
 - set ignore unknown options
 
