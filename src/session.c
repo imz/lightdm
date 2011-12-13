@@ -251,7 +251,10 @@ session_start (Session *session)
     user = pam_session_get_user (session->priv->authentication);
   
     /* Set POSIX variables */
-    session_set_env (session, "PATH", "/usr/local/bin:/usr/bin:/bin");
+    if (user_get_uid (user) == 0)
+        session_set_env (session, "PATH", "/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin");
+    else
+        session_set_env (session, "PATH", "/bin:/usr/bin:/usr/local/bin:/usr/games:/usr/local/games");
     session_set_env (session, "USER", user_get_name (user));
     session_set_env (session, "LOGNAME", user_get_name (user));
     session_set_env (session, "HOME", user_get_home_directory (user));
