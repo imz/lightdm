@@ -35,7 +35,7 @@ XSession *
 xsession_new (XServer *xserver)
 {
     XSession *session = g_object_new (XSESSION_TYPE, NULL);
-  
+
     session->priv->xserver = g_object_ref (xserver);
 
     return session;
@@ -97,7 +97,19 @@ xsession_setup (Session *session)
             g_free (dir);
         }
         else
+        {          
             path = g_build_filename (user_get_home_directory (session_get_user (session)), ".Xauthority", NULL);
+
+            /* Workaround the case where the authority file might have been
+             * incorrectly written as root in a buggy version of LightDM */
+            if (getuid () == 0)
+            {
+                int result;
+                result = lchown (path, user_get_uid (session_get_user (session)), user_get_gid (session_get_user (session)));
+                if (result < 0 && errno != ENOENT)
+                    g_warning ("Failed to correct ownership of %s: %s", path, strerror (errno));                
+            }
+        }
 
         session_set_env (session, "XAUTHORITY", path);
         xsession->priv->authority_file = g_file_new_for_path (path);
@@ -127,14 +139,20 @@ xsession_remove_authority (XSession *session)
     if (session->priv->authority_file)
     {
         gboolean drop_privileges;
+        gchar *path;
       
         drop_privileges = geteuid () == 0;
         if (drop_privileges)
             privileges_drop (session_get_user (SESSION (session)));
-        g_debug ("Removing session authority from %s", g_file_get_path (session->priv->authority_file));
+
+        path = g_file_get_path (session->priv->authority_file);
+        g_debug ("Removing session authority from %s", path);
+        g_free (path);
         xauth_write (session->priv->authority, XAUTH_WRITE_MODE_REMOVE, session->priv->authority_file, NULL);
+
         if (drop_privileges)
             privileges_reclaim ();
+
         g_object_unref (session->priv->authority_file);
         session->priv->authority_file = NULL;
     }
@@ -168,6 +186,10 @@ xsession_finalize (GObject *object)
     xsession_remove_authority (self);
     if (self->priv->xserver)
         g_object_unref (self->priv->xserver);
+    if (self->priv->authority)
+        g_object_unref (self->priv->authority);
+    if (self->priv->authority_file)
+        g_object_unref (self->priv->authority_file);
 
     G_OBJECT_CLASS (xsession_parent_class)->finalize (object);
 }

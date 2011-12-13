@@ -442,7 +442,7 @@ handle_set_language (Greeter *greeter, const gchar *language)
 
     g_debug ("Greeter sets language %s", language);
     user = pam_session_get_user (greeter->priv->authentication);
-    user_set_language (user, language);
+    user_set_locale (user, language);
 }
 
 static guint32
@@ -530,7 +530,8 @@ read_cb (GIOChannel *source, GIOCondition condition, gpointer data)
     /* If have header, rerun for content */
     if (greeter->priv->n_read == HEADER_SIZE)
     {
-        n_to_read = ((guint32 *) greeter->priv->read_buffer)[1];
+        gsize offset = int_length ();
+        n_to_read = read_int (greeter, &offset);
         if (n_to_read > 0)
         {
             greeter->priv->read_buffer = g_realloc (greeter->priv->read_buffer, HEADER_SIZE + n_to_read);

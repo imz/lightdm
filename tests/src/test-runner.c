@@ -277,6 +277,7 @@ run_commands ()
             expect_exit = TRUE;
             stop_daemon ();
         }
+        // FIXME: Make generic RUN-COMMAND
         else if (strcmp (name, "START-XSERVER") == 0)
         {
             gchar *xserver_args, *command_line;
@@ -287,13 +288,33 @@ run_commands ()
             xserver_args = g_hash_table_lookup (params, "ARGS");
             if (!xserver_args)
                 xserver_args = "";
-            command_line = g_strdup_printf ("%s/tests/src/test-xserver %s", BUILDDIR, xserver_args);
+            command_line = g_strdup_printf ("%s/tests/src/X %s", BUILDDIR, xserver_args);
 
-            g_debug ("Run %s", command_line);
             if (!g_shell_parse_argv (command_line, NULL, &argv, &error) ||
                 !g_spawn_async (NULL, argv, NULL, 0, NULL, NULL, &pid, &error))
             {
                 g_printerr ("Error starting X server: %s", error->message);
+                quit (EXIT_FAILURE);
+                return;
+            }
+            children = g_list_append (children, GINT_TO_POINTER (pid));
+        }
+        else if (strcmp (name, "START-VNC-CLIENT") == 0)
+        {
+            gchar *vnc_client_args, *command_line;
+            gchar **argv;
+            GPid pid;
+            GError *error = NULL;
+
+            vnc_client_args = g_hash_table_lookup (params, "ARGS");
+            if (!vnc_client_args)
+                vnc_client_args = "";
+            command_line = g_strdup_printf ("%s/tests/src/vnc-client %s", BUILDDIR, vnc_client_args);
+
+            if (!g_shell_parse_argv (command_line, NULL, &argv, &error) ||
+                !g_spawn_async (NULL, argv, NULL, 0, NULL, NULL, &pid, &error))
+            {
+                g_printerr ("Error starting VNC client: %s", error->message);
                 quit (EXIT_FAILURE);
                 return;
             }
@@ -553,11 +574,13 @@ main (int argc, char **argv)
         gchar *user_name;
         gchar *password;
         gchar *real_name;
+        gchar *dmrc;
         gint uid;
     } users[] =
     {
-        {"alice", "password", "Alice User", 1000},
-        {"bob", "", "Bob User", 1001},
+        {"alice", "password", "Alice User", NULL, 1000},
+        {"bob",   "",         "Bob User",   NULL, 1001},
+        {"carol", "",         "Carol User", "[Desktop]\nSession=alternative\n", 1002},
         {NULL, NULL, 0}
     };
     int i;
@@ -566,6 +589,13 @@ main (int argc, char **argv)
         path = g_build_filename (home_dir, users[i].user_name, NULL);
         g_mkdir_with_parents (path, 0755);
         g_free (path);
+
+        if (users[i].dmrc)
+        {
+            path = g_build_filename (home_dir, users[i].user_name, ".dmrc", NULL);
+            g_file_set_contents (path, users[i].dmrc, -1, NULL);
+            g_free (path);
+        }
 
         g_string_append_printf (passwd_data, "%s:%s:%d:%d:%s:%s/home/%s:/bin/sh\n", users[i].user_name, users[i].password, users[i].uid, users[i].uid, users[i].real_name, temp_dir, users[i].user_name);
     }
@@ -586,7 +616,6 @@ main (int argc, char **argv)
     if (config_path)
         g_string_append_printf (command_line, " --config %s", config_path);
     g_string_append (command_line, " --test-mode");
-    g_string_append(command_line, " --xserver-command=test-xserver");
     if (greeter)
         g_string_append_printf (command_line, " --greeter-session=%s", greeter);
     g_string_append (command_line, " --session-wrapper=");

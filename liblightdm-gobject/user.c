@@ -19,13 +19,15 @@
 
 #include "lightdm/user.h"
 
-enum {
+enum
+{
     LIST_PROP_0,
     LIST_PROP_NUM_USERS,
     LIST_PROP_USERS,
 };
 
-enum {
+enum
+{
     USER_PROP_0,
     USER_PROP_NAME,
     USER_PROP_REAL_NAME,
@@ -38,7 +40,8 @@ enum {
     USER_PROP_LOGGED_IN
 };
 
-enum {
+enum
+{
     USER_ADDED,
     USER_CHANGED,
     USER_REMOVED,
@@ -46,7 +49,8 @@ enum {
 };
 static guint list_signals[LAST_LIST_SIGNAL] = { 0 };
 
-enum {
+enum
+{
     CHANGED,
     LAST_USER_SIGNAL
 };
@@ -199,8 +203,8 @@ load_passwd_file (LightDMUserList *user_list, gboolean emit_add_signal)
     g_debug ("Loading user config from %s", USER_CONFIG_FILE);
 
     config = g_key_file_new ();
-    if (!g_key_file_load_from_file (config, USER_CONFIG_FILE, G_KEY_FILE_NONE, &error) &&
-        !g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
+    g_key_file_load_from_file (config, USER_CONFIG_FILE, G_KEY_FILE_NONE, &error);
+    if (error && !g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
         g_warning ("Failed to load configuration from %s: %s", USER_CONFIG_FILE, error->message); // FIXME: Don't make warning on no file, just info
     g_clear_error (&error);
 
@@ -389,7 +393,7 @@ update_user (UserAccountObject *object)
                                           -1,
                                           NULL,
                                           &error);
-    if (!result)
+    if (error)
         g_warning ("Error updating user %s: %s", g_dbus_proxy_get_object_path (object->proxy), error->message);
     g_clear_error (&error);
     if (!result)
@@ -468,7 +472,7 @@ user_account_object_new (LightDMUserList *user_list, const gchar *path)
                                            "org.freedesktop.Accounts.User",
                                            NULL,
                                            &error);
-    if (!proxy)
+    if (error)
         g_warning ("Error getting user %s: %s", path, error->message);
     g_clear_error (&error);
     if (!proxy)
@@ -589,7 +593,7 @@ load_session (LightDMUserList *user_list, const gchar *path)
                                           -1,
                                           NULL,
                                           &error);
-    if (!result)
+    if (error)
         g_warning ("Error getting UserName from org.freedesktop.DisplayManager.Session: %s", error->message);
     g_clear_error (&error);
     if (!result)
@@ -682,7 +686,7 @@ update_users (LightDMUserList *user_list)
                                                                   "org.freedesktop.Accounts",
                                                                   NULL,
                                                                   &error);
-    if (!priv->accounts_service_proxy)
+    if (error)
         g_warning ("Error contacting org.freedesktop.Accounts: %s", error->message);
     g_clear_error (&error);
 
@@ -714,7 +718,7 @@ update_users (LightDMUserList *user_list)
                                          -1,
                                          NULL,
                                          &error);
-        if (!result)
+        if (error)
             g_warning ("Error getting user list from org.freedesktop.Accounts: %s", error->message);
         g_clear_error (&error);
         if (!result)
@@ -760,7 +764,7 @@ update_users (LightDMUserList *user_list)
         passwd_file = g_file_new_for_path (PASSWD_FILE);
         priv->passwd_monitor = g_file_monitor (passwd_file, G_FILE_MONITOR_NONE, NULL, &error);
         g_object_unref (passwd_file);
-        if (!priv->passwd_monitor)
+        if (error)
             g_warning ("Error monitoring %s: %s", PASSWD_FILE, error->message);
         else
             g_signal_connect (priv->passwd_monitor, "changed", G_CALLBACK (passwd_changed_cb), user_list);
@@ -775,7 +779,7 @@ update_users (LightDMUserList *user_list)
                                                                  "org.freedesktop.DisplayManager",
                                                                  NULL,
                                                                  &error);
-    if (!priv->display_manager_proxy)
+    if (error)
         g_warning ("Error contacting org.freedesktop.DisplayManager: %s", error->message);
     g_clear_error (&error);
 
@@ -796,7 +800,7 @@ update_users (LightDMUserList *user_list)
                                               -1,
                                               NULL,
                                               &error);
-        if (!result)
+        if (error)
             g_warning ("Error getting session list from org.freedesktop.DisplayManager: %s", error->message);
         g_clear_error (&error);
         if (!result)
@@ -900,7 +904,8 @@ lightdm_user_list_get_property (GObject    *object,
 
     self = LIGHTDM_USER_LIST (object);
 
-    switch (prop_id) {
+    switch (prop_id)
+    {
     case LIST_PROP_NUM_USERS:
         g_value_set_int (value, lightdm_user_list_get_length (self));
         break;
@@ -1102,7 +1107,15 @@ load_dmrc (LightDMUser *user)
     if (priv->session)
         g_free (priv->session);
 
+    /* The Language field is actually a locale, strip the codeset off it to get the language */
     priv->language = g_key_file_get_string (priv->dmrc_file, "Desktop", "Language", NULL);
+    if (priv->language)
+    {
+        gchar *codeset = strchr (priv->language, '.');
+        if (codeset)
+            *codeset = '\0';
+    }
+
     priv->layout = g_key_file_get_string (priv->dmrc_file, "Desktop", "Layout", NULL);
     priv->session = g_key_file_get_string (priv->dmrc_file, "Desktop", "Session", NULL);
 }
@@ -1118,12 +1131,14 @@ get_string_property (GDBusProxy *proxy, const gchar *property)
 
     answer = g_dbus_proxy_get_cached_property (proxy, property);
 
-    if (!answer) {
+    if (!answer)
+    {
         g_warning ("Could not get accounts property %s", property);
         return NULL;
     }
 
-    if (!g_variant_is_of_type (answer, G_VARIANT_TYPE ("s"))) {
+    if (!g_variant_is_of_type (answer, G_VARIANT_TYPE ("s")))
+    {
         g_warning ("Unexpected accounts property type for %s: %s",
                    property, g_variant_get_type_string (answer));
         g_variant_unref (answer);
@@ -1145,8 +1160,10 @@ load_accounts_service (LightDMUser *user)
     /* First, find AccountObject proxy */
     UserAccountObject *account = NULL;
     GList *iter;
-    for (iter = list_priv->user_account_objects; iter; iter = iter->next) {
-        if (((UserAccountObject *)iter->data)->user == user) {
+    for (iter = list_priv->user_account_objects; iter; iter = iter->next)
+    {
+        if (((UserAccountObject *)iter->data)->user == user)
+        {
             account = (UserAccountObject *)iter->data;
             break;
         }
@@ -1281,7 +1298,8 @@ lightdm_user_get_property (GObject    *object,
 
     self = LIGHTDM_USER (object);
 
-    switch (prop_id) {
+    switch (prop_id)
+    {
     case USER_PROP_NAME:
         g_value_set_string (value, lightdm_user_get_name (self));
         break;

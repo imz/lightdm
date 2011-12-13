@@ -13,12 +13,16 @@ TESTS = \
 	test-autologin-xserver-crash \
 	test-autologin-session-crash \
 	test-autologin-logout \
+	test-autologin-previous-session \
 	test-autologin-guest \
 	test-autologin-guest-fail-setup-script \
 	test-autologin-guest-logout \
 	test-login-gobject \
 	test-login-gobject-manual \
+	test-login-gobject-manual-previous-session \
 	test-login-gobject-no-password \
+	test-login-gobject-pick-session \
+	test-login-gobject-previous-session \
 	test-login-gobject-wrong-password \
 	test-login-gobject-invalid-user \
 	test-login-gobject-invalid-session \
@@ -40,6 +44,7 @@ TESTS = \
 	test-switch-to-greeter \
 	test-switch-to-guest \
 	test-switch-to-user \
+	test-vnc-login \
 	test-xdmcp-login
 
 #	test-autologin-session-exit-error
@@ -51,11 +56,14 @@ if COMPILE_LIBLIGHTDM_QT
 TESTS += \
 	test-login-qt \
 	test-login-qt-manual \
+	test-login-qt-manual-previous-session \
 	test-login-qt-no-password \
+	test-login-qt-previous-session \
 	test-login-qt-wrong-password \
 	test-login-qt-invalid-user \
 	test-login-qt-invalid-session \
 	test-login-qt-logout \
+	test-login-qt-pick-session \
 	test-login-qt-guest \
 	test-login-qt-guest-disabled \
 	test-login-qt-guest-no-setup-script \
@@ -67,6 +75,7 @@ EXTRA_DIST = \
 	$(TESTS) \
 	data/xgreeters/test-gobject-greeter.desktop \
 	data/xgreeters/test-qt-greeter.desktop \
+	data/xsessions/alternative.desktop \
 	data/xsessions/default.desktop \
 	scripts/autologin.conf \
 	scripts/autologin-guest.conf \
@@ -75,6 +84,7 @@ EXTRA_DIST = \
 	scripts/autologin-invalid-session.conf \
 	scripts/autologin-invalid-user.conf \
 	scripts/autologin-logout.conf \
+	scripts/autologin-previous-session.conf \
 	scripts/autologin-session-crash.conf \
 	scripts/autologin-xserver-crash.conf \
 	scripts/greeter-fail-start.conf \
@@ -91,7 +101,10 @@ EXTRA_DIST = \
 	scripts/login-invalid-user.conf \
 	scripts/login-logout.conf \
 	scripts/login-manual.conf \
+	scripts/login-manual-previous-session.conf \
 	scripts/login-no-password.conf \
+	scripts/login-pick-session.conf \
+	scripts/login-previous-session.conf \
 	scripts/login-session-crash.conf \
 	scripts/login-wrong-password.conf \
 	scripts/login-xserver-crash.conf \
@@ -106,5 +119,6 @@ EXTRA_DIST = \
 	scripts/switch-to-greeter.conf \
 	scripts/switch-to-guest.conf \
 	scripts/switch-to-user.conf \
+	scripts/vnc-login.conf \
 	scripts/xdmcp-login.conf \
 	scripts/xserver-fail-start.conf
