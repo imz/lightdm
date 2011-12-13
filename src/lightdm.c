@@ -942,6 +942,8 @@ main (int argc, char **argv)
     option_context = g_option_context_new (/* Arguments and description for --help test */
                                            _("- Display Manager"));
     g_option_context_add_main_entries (option_context, options, GETTEXT_PACKAGE);
+    g_option_context_set_ignore_unknown_options (option_context, TRUE);
+
     result = g_option_context_parse (option_context, &argc, &argv, &error);
     if (error)
         g_printerr ("%s\n", error->message);
@@ -952,7 +954,7 @@ main (int argc, char **argv)
         g_printerr (/* Text printed out when an unknown command-line argument provided */
                     _("Run '%s --help' to see a full list of available command line options."), argv[0]);
         g_printerr ("\n");
-        return EXIT_FAILURE;
+        /* return EXIT_FAILURE; */
     }
 
     if (show_version)
