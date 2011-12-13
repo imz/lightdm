@@ -9,6 +9,7 @@
  * license.
  */
 
+#include <config.h>
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
