@@ -231,16 +231,11 @@ session_start (Session *session)
     user = pam_session_get_user (session->priv->authentication);
   
     /* Set POSIX variables */
-    if (user_get_uid (user) == 0)
-        session_set_env (session, "PATH", "/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin");
-    else
-        session_set_env (session, "PATH", "/bin:/usr/bin:/usr/local/bin:/usr/games:/usr/local/games");
+    session_set_env (session, "PATH", "/bin:/usr/bin:/usr/local/bin:/usr/games:/usr/local/games");
     session_set_env (session, "USER", user_get_name (user));
     session_set_env (session, "LOGNAME", user_get_name (user));
     session_set_env (session, "HOME", user_get_home_directory (user));
     session_set_env (session, "SHELL", user_get_shell (user));
-
-    session_set_env (session, "USERNAME", user_get_name (user)); // FIXME: Is this required?
 
     return SESSION_GET_CLASS (session)->start (session);
 }
@@ -306,6 +301,14 @@ session_real_start (Session *session)
     }  
 
     return result;
+}
+
+void
+session_lock (Session *session)
+{    
+    g_return_if_fail (session != NULL);
+    if (getuid () == 0)
+        ck_lock_session (session->priv->console_kit_cookie);
 }
 
 void

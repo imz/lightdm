@@ -1,4 +1,5 @@
-/*
+/* -*- Mode: C; indent-tabs-mode:nil; tab-width:4 -*-
+ *
  * Copyright (C) 2010 Robert Ancell.
  * Author: Robert Ancell <robert.ancell@canonical.com>
  * 
@@ -34,10 +35,13 @@ enum
     USER_PROP_DISPLAY_NAME,
     USER_PROP_HOME_DIRECTORY,
     USER_PROP_IMAGE,
+    USER_PROP_BACKGROUND,
     USER_PROP_LANGUAGE,
     USER_PROP_LAYOUT,
+    USER_PROP_LAYOUTS,
     USER_PROP_SESSION,
-    USER_PROP_LOGGED_IN
+    USER_PROP_LOGGED_IN,
+    USER_PROP_HAS_MESSAGES
 };
 
 enum
@@ -92,10 +96,12 @@ typedef struct
     gchar *real_name;
     gchar *home_directory;
     gchar *image;
+    gchar *background;
+    gboolean has_messages;
 
     GKeyFile *dmrc_file;
     gchar *language;
-    gchar *layout;
+    gchar **layouts;
     gchar *session;
 } LightDMUserPrivate;
 
@@ -130,7 +136,7 @@ static LightDMUserList *singleton = NULL;
  *
  * Get the user list.
  *
- * Return value: (tranfer none): the #LightDMUserList
+ * Return value: (transfer none): the #LightDMUserList
  **/
 LightDMUserList *
 lightdm_user_list_get_instance (void)
@@ -432,6 +438,16 @@ update_user (UserAccountObject *object)
                 priv->image = NULL;
             else
                 priv->image = g_strdup (icon_file);
+        }
+        else if (strcmp (name, "BackgroundFile") == 0 && g_variant_is_of_type (value, G_VARIANT_TYPE_STRING))
+        {
+            gchar *background_file;
+            g_variant_get (value, "&s", &background_file);
+            g_free (priv->background);
+            if (strcmp (background_file, "") == 0)
+                priv->background = NULL;
+            else
+                priv->background = g_strdup (background_file);
         }
     }
     g_variant_iter_free (iter);
@@ -756,11 +772,16 @@ update_users (LightDMUserList *user_list)
     }
     else
     {
+        const gchar *passwd_filename;
         GFile *passwd_file;
 
         load_passwd_file (user_list, FALSE);
 
         /* Watch for changes to user list */
+
+        passwd_filename = g_getenv ("LIGHTDM_TEST_PASSWD_FILE");
+        if (!passwd_filename)
+            passwd_filename = PASSWD_FILE;
         passwd_file = g_file_new_for_path (PASSWD_FILE);
         priv->passwd_monitor = g_file_monitor (passwd_file, G_FILE_MONITOR_NONE, NULL, &error);
         g_object_unref (passwd_file);
@@ -1081,6 +1102,21 @@ lightdm_user_get_image (LightDMUser *user)
     return GET_USER_PRIVATE (user)->image;
 }
 
+/**
+ * lightdm_user_get_background:
+ * @user: A #LightDMUser
+ * 
+ * Get the background file path for a user.
+ * 
+ * Return value: The background file path for the given user or #NULL if no path
+ **/
+const gchar *
+lightdm_user_get_background (LightDMUser *user)
+{
+    g_return_val_if_fail (LIGHTDM_IS_USER (user), NULL);
+    return GET_USER_PRIVATE (user)->background;
+}
+
 static void
 load_dmrc (LightDMUser *user)
 {
@@ -1100,14 +1136,9 @@ load_dmrc (LightDMUser *user)
 
     // FIXME: Watch for changes
 
+    /* The Language field is actually a locale, strip the codeset off it to get the language */
     if (priv->language)
         g_free (priv->language);
-    if (priv->layout)
-        g_free (priv->layout);
-    if (priv->session)
-        g_free (priv->session);
-
-    /* The Language field is actually a locale, strip the codeset off it to get the language */
     priv->language = g_key_file_get_string (priv->dmrc_file, "Desktop", "Language", NULL);
     if (priv->language)
     {
@@ -1116,15 +1147,27 @@ load_dmrc (LightDMUser *user)
             *codeset = '\0';
     }
 
-    priv->layout = g_key_file_get_string (priv->dmrc_file, "Desktop", "Layout", NULL);
+    if (priv->layouts)
+    {
+        g_strfreev (priv->layouts);
+        priv->layouts = NULL;
+    }
+    if (g_key_file_has_key (priv->dmrc_file, "Desktop", "Layout", NULL))
+    {
+        priv->layouts = g_malloc (sizeof (gchar *) * 2);
+        priv->layouts[0] = g_key_file_get_string (priv->dmrc_file, "Desktop", "Layout", NULL);
+        priv->layouts[1] = NULL;
+    }
+
+    if (priv->session)
+        g_free (priv->session);
     priv->session = g_key_file_get_string (priv->dmrc_file, "Desktop", "Session", NULL);
 }
 
-static gchar *
-get_string_property (GDBusProxy *proxy, const gchar *property)
+static GVariant *
+get_property (GDBusProxy *proxy, const gchar *property)
 {
     GVariant *answer;
-    gchar *rv;
 
     if (!proxy)
         return NULL;
@@ -1137,7 +1180,38 @@ get_string_property (GDBusProxy *proxy, const gchar *property)
         return NULL;
     }
 
-    if (!g_variant_is_of_type (answer, G_VARIANT_TYPE ("s")))
+    return answer;
+}
+
+static gboolean
+get_boolean_property (GDBusProxy *proxy, const gchar *property)
+{
+    GVariant *answer;
+    gboolean rv;
+
+    answer = get_property (proxy, property);
+    if (!g_variant_is_of_type (answer, G_VARIANT_TYPE_BOOLEAN))
+    {
+        g_warning ("Unexpected accounts property type for %s: %s",
+                   property, g_variant_get_type_string (answer));
+        g_variant_unref (answer);
+        return FALSE;
+    }
+
+    rv = g_variant_get_boolean (answer);
+    g_variant_unref (answer);
+
+    return rv;
+}
+
+static gchar *
+get_string_property (GDBusProxy *proxy, const gchar *property)
+{
+    GVariant *answer;
+    gchar *rv;
+  
+    answer = get_property (proxy, property);
+    if (!g_variant_is_of_type (answer, G_VARIANT_TYPE_STRING))
     {
         g_warning ("Unexpected accounts property type for %s: %s",
                    property, g_variant_get_type_string (answer));
@@ -1145,7 +1219,43 @@ get_string_property (GDBusProxy *proxy, const gchar *property)
         return NULL;
     }
 
-    g_variant_get (answer, "s", &rv);
+    rv = g_strdup (g_variant_get_string (answer, NULL));
+    if (strcmp (rv, "") == 0)
+    {
+        g_free (rv);
+        rv = NULL;
+    }
+    g_variant_unref (answer);
+
+    return rv;
+}
+
+static gchar **
+get_string_array_property (GDBusProxy *proxy, const gchar *property)
+{
+    GVariant *answer;
+    gchar **rv;
+
+    if (!proxy)
+        return NULL;
+
+    answer = g_dbus_proxy_get_cached_property (proxy, property);
+
+    if (!answer)
+    {
+        g_warning ("Could not get accounts property %s", property);
+        return NULL;
+    }
+
+    if (!g_variant_is_of_type (answer, G_VARIANT_TYPE ("as")))
+    {
+        g_warning ("Unexpected accounts property type for %s: %s",
+                   property, g_variant_get_type_string (answer));
+        g_variant_unref (answer);
+        return NULL;
+    }
+
+    rv = g_variant_dup_strv (answer, NULL);
 
     g_variant_unref (answer);
     return rv;
@@ -1156,15 +1266,17 @@ load_accounts_service (LightDMUser *user)
 {
     LightDMUserPrivate *priv = GET_USER_PRIVATE (user);
     LightDMUserListPrivate *list_priv = GET_LIST_PRIVATE (priv->user_list);
-
-    /* First, find AccountObject proxy */
     UserAccountObject *account = NULL;
     GList *iter;
+    gchar **value;
+
+    /* First, find AccountObject proxy */
     for (iter = list_priv->user_account_objects; iter; iter = iter->next)
     {
-        if (((UserAccountObject *)iter->data)->user == user)
+        UserAccountObject *a = iter->data;
+        if (a->user == user)
         {
-            account = (UserAccountObject *)iter->data;
+            account = a;
             break;
         }
     }
@@ -1174,10 +1286,19 @@ load_accounts_service (LightDMUser *user)
     /* We have proxy, let's grab some properties */
     if (priv->language)
         g_free (priv->language);
+    priv->language = get_string_property (account->proxy, "Language");
     if (priv->session)
         g_free (priv->session);
-    priv->language = get_string_property (account->proxy, "Language");
     priv->session = get_string_property (account->proxy, "XSession");
+
+    value = get_string_array_property (account->proxy, "XKeyboardLayouts");
+    if (value)
+    {
+        g_strfreev (priv->layouts);
+        priv->layouts = value;
+    }
+
+    priv->has_messages = get_boolean_property (account->proxy, "XHasMessages");
 
     return TRUE;
 }
@@ -1188,6 +1309,13 @@ load_user_values (LightDMUser *user)
 {
     load_dmrc (user);
     load_accounts_service (user); // overrides dmrc values
+
+    /* Ensure a few guarantees */
+    if (GET_USER_PRIVATE (user)->layouts == NULL)
+    {
+        GET_USER_PRIVATE (user)->layouts = g_malloc (sizeof (gchar));
+        GET_USER_PRIVATE (user)->layouts[0] = NULL;
+    }
 }
 
 /**
@@ -1212,14 +1340,30 @@ lightdm_user_get_language (LightDMUser *user)
  * 
  * Get the keyboard layout for a user.
  * 
- * Return value: The keyboard layoyt for the given user or #NULL if using system defaults.
+ * Return value: The keyboard layout for the given user or #NULL if using system defaults.  Copy the value if you want to use it long term.
  **/
 const gchar *
 lightdm_user_get_layout (LightDMUser *user)
 {
     g_return_val_if_fail (LIGHTDM_IS_USER (user), NULL);
     load_user_values (user);
-    return GET_USER_PRIVATE (user)->layout;
+    return GET_USER_PRIVATE (user)->layouts[0];
+}
+
+/**
+ * lightdm_user_get_layouts
+ * @user: A #LightDMUser
+ * 
+ * Get the configured keyboard layouts for a user.
+ * 
+ * Return value: (transfer none): A NULL-terminated array of keyboard layouts for the given user.  Copy the values if you want to use them long term.
+ **/
+const gchar * const *
+lightdm_user_get_layouts (LightDMUser *user)
+{
+    g_return_val_if_fail (LIGHTDM_IS_USER (user), NULL);
+    load_user_values (user);
+    return (const gchar * const *) GET_USER_PRIVATE (user)->layouts;
 }
 
 /**
@@ -1265,18 +1409,25 @@ lightdm_user_get_logged_in (LightDMUser *user)
     return FALSE;
 }
 
+/**
+ * lightdm_user_get_has_messages:
+ * @user: A #LightDMUser
+ * 
+ * Check if a user has waiting messages.
+ * 
+ * Return value: #TRUE if the user has waiting messages.
+ **/
+gboolean
+lightdm_user_get_has_messages (LightDMUser *user)
+{
+    g_return_val_if_fail (LIGHTDM_IS_USER (user), FALSE);
+    load_user_values (user);
+    return GET_USER_PRIVATE (user)->has_messages;
+}
+
 static void
 lightdm_user_init (LightDMUser *user)
 {
-    LightDMUserPrivate *priv = GET_USER_PRIVATE (user);
-
-    priv->name = g_strdup ("");
-    priv->real_name = g_strdup ("");
-    priv->home_directory = g_strdup ("");
-    priv->image = g_strdup ("");
-    priv->language = g_strdup ("");
-    priv->layout = g_strdup ("");
-    priv->session = g_strdup ("");
 }
 
 static void
@@ -1315,17 +1466,26 @@ lightdm_user_get_property (GObject    *object,
     case USER_PROP_IMAGE:
         g_value_set_string (value, lightdm_user_get_image (self));
         break;
+    case USER_PROP_BACKGROUND:
+        g_value_set_string (value, lightdm_user_get_background (self));
+        break;
     case USER_PROP_LANGUAGE:
         g_value_set_string (value, lightdm_user_get_language (self));
         break;
     case USER_PROP_LAYOUT:
         g_value_set_string (value, lightdm_user_get_layout (self));
         break;
+    case USER_PROP_LAYOUTS:
+        g_value_set_boxed (value, g_strdupv ((gchar **) lightdm_user_get_layouts (self)));
+        break;
     case USER_PROP_SESSION:
         g_value_set_string (value, lightdm_user_get_session (self));
         break;
     case USER_PROP_LOGGED_IN:
         g_value_set_boolean (value, lightdm_user_get_logged_in (self));
+        break;
+    case USER_PROP_HAS_MESSAGES:
+        g_value_set_boolean (value, lightdm_user_get_has_messages (self));
         break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -1343,6 +1503,8 @@ lightdm_user_finalize (GObject *object)
     g_free (priv->real_name);
     g_free (priv->home_directory);
     g_free (priv->image);
+    g_free (priv->background);
+    g_strfreev (priv->layouts);
     if (priv->dmrc_file)
         g_key_file_free (priv->dmrc_file);
 }
@@ -1394,6 +1556,13 @@ lightdm_user_class_init (LightDMUserClass *klass)
                                                           NULL,
                                                           G_PARAM_READWRITE));
     g_object_class_install_property (object_class,
+                                     USER_PROP_BACKGROUND,
+                                     g_param_spec_string ("background",
+                                                          "background",
+                                                          "User background",
+                                                          NULL,
+                                                          G_PARAM_READWRITE));
+    g_object_class_install_property (object_class,
                                      USER_PROP_LANGUAGE,
                                      g_param_spec_string ("language",
                                                          "language",
@@ -1408,6 +1577,13 @@ lightdm_user_class_init (LightDMUserClass *klass)
                                                           NULL,
                                                           G_PARAM_READABLE));
     g_object_class_install_property (object_class,
+                                     USER_PROP_LAYOUTS,
+                                     g_param_spec_boxed ("layouts",
+                                                         "layouts",
+                                                         "Keyboard layouts used by this user",
+                                                         G_TYPE_STRV,
+                                                         G_PARAM_READABLE));
+    g_object_class_install_property (object_class,
                                      USER_PROP_SESSION,
                                      g_param_spec_string ("session",
                                                           "session",
@@ -1419,6 +1595,13 @@ lightdm_user_class_init (LightDMUserClass *klass)
                                      g_param_spec_boolean ("logged-in",
                                                            "logged-in",
                                                            "TRUE if the user is currently in a session",
+                                                           FALSE,
+                                                           G_PARAM_READWRITE));
+    g_object_class_install_property (object_class,
+                                     USER_PROP_LOGGED_IN,
+                                     g_param_spec_boolean ("has-messages",
+                                                           "has-messages",
+                                                           "TRUE if the user is has waiting messages",
                                                            FALSE,
                                                            G_PARAM_READWRITE));
 

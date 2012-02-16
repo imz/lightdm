@@ -1,46 +1,47 @@
-lib_LTLIBRARIES = liblightdm-qt-1.la
+lib_LTLIBRARIES = liblightdm-qt-2.la
 
-# Generate metadata for QObjects
-MOC_FILES = \
-	greeter_moc.cpp \
-	session_moc.cpp \
-	user_moc.cpp 
+%_moc.cpp: QLightDM/%.h
+	$(MOC) $< -o $@
 
-greeter_moc.cpp: QLightDM/Greeter
-	moc $< -o $@
-session_moc.cpp: QLightDM/Session
-	moc $< -o $@
-user_moc.cpp: QLightDM/User
-	moc $< -o $@
+power.cpp: power_moc.cpp
+greeter.cpp: greeter_moc.cpp
+sessionsmodel.cpp: sessionsmodel_moc.cpp
+usersmodel.cpp: usersmodel_moc.cpp
 
-liblightdm_qt_1_la_LIBADD = $(LIBLIGHTDM_QT_LIBS)
-liblightdm_qt_1_la_CXXFLAGS = $(LIBLIGHTDM_QT_CFLAGS) \
-	-DXSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions\"
+liblightdm_qt_2_la_LIBADD = \
+	$(LIBLIGHTDM_QT_LIBS) \
+	-L$(top_builddir)/liblightdm-gobject \
+	-llightdm-gobject-1
 
-liblightdm_qt_1include_HEADERS = \
+liblightdm_qt_2_la_CXXFLAGS = $(LIBLIGHTDM_QT_CFLAGS) \
+	-I$(top_srcdir)/liblightdm-gobject \
+	$(LIBLIGHTDM_GOBJECT_CFLAGS) \
+	-DXSESSIONS_DIR=\"$(datadir)/xsessions\"
+
+liblightdm_qt_2include_HEADERS = \
 	QLightDM/Greeter \
-	QLightDM/Language \
 	QLightDM/Power \
-	QLightDM/Session \
-	QLightDM/System \
-	QLightDM/User
-liblightdm_qt_1includedir=$(includedir)/lightdm-qt-1/QLightDM
+	QLightDM/SessionsModel \
+	QLightDM/UsersModel \
+	QLightDM/greeter.h \
+	QLightDM/power.h \
+	QLightDM/sessionsmodel.h \
+	QLightDM/usersmodel.h
 
-liblightdm_qt_1_la_SOURCES = \
+liblightdm_qt_2includedir=$(includedir)/lightdm-qt-2/QLightDM
+
+liblightdm_qt_2_la_SOURCES = \
 	greeter.cpp \
-	language.cpp \
 	power.cpp \
-	session.cpp \
-	system.cpp \
-	user.cpp \
-	$(MOC_FILES) \
-	$(liblightdm_qt_1include_HEADERS)
+	sessionsmodel.cpp \
+	usersmodel.cpp \
+	$(liblightdm_qt_2include_HEADERS)
 
 pkgconfigdir = $(libdir)/pkgconfig
-pkgconfig_DATA = liblightdm-qt-1.pc
+pkgconfig_DATA = liblightdm-qt-2.pc
 
 CLEANFILES = \
-	$(MOC_FILES)
+	*_moc.cpp
 
 DISTCLEANFILES = \
 	Makefile.in \

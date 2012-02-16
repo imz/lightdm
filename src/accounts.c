@@ -53,8 +53,6 @@ struct UserPrivate
 
 G_DEFINE_TYPE (User, user, G_TYPE_OBJECT);
 
-static gchar *passwd_file = NULL;
-
 /* Connection to AccountsService */
 static GDBusProxy *accounts_service_proxy = NULL;
 static gboolean have_accounts_service_proxy = FALSE;
@@ -162,7 +160,7 @@ get_accounts_service_proxy ()
 
     if (have_accounts_service_proxy)
         return accounts_service_proxy;
-  
+
     have_accounts_service_proxy = TRUE;
     accounts_service_proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
                                                             G_DBUS_PROXY_FLAGS_NONE,
@@ -216,7 +214,7 @@ get_accounts_proxy_for_user (const gchar *user)
 
     if (!user_path)
         return NULL;
-
+  
     proxy = g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
                                            G_DBUS_PROXY_FLAGS_NONE,
                                            NULL,
@@ -249,94 +247,18 @@ user_from_passwd (struct passwd *user_info)
     return user;
 }
 
-void
-user_set_use_pam (void)
-{
-    user_set_use_passwd_file (NULL);
-}
-
-void
-user_set_use_passwd_file (gchar *passwd_file_)
-{
-    g_free (passwd_file);
-    passwd_file = g_strdup (passwd_file_);
-}
-
-static GList *
-load_passwd_file ()
-{
-    GList *users = NULL;
-    gchar *data = NULL, **lines;
-    gint i;
-    GError *error = NULL;
-
-    g_file_get_contents (passwd_file, &data, NULL, &error);
-    if (error)
-        g_warning ("Error loading passwd file: %s", error->message);
-    g_clear_error (&error);
-
-    if (!data)
-        return users;
-
-    lines = g_strsplit (data, "\n", -1);
-    g_free (data);
-
-    for (i = 0; lines[i]; i++)
-    {
-        gchar *line, **fields;
-
-        line = g_strstrip (lines[i]);
-        fields = g_strsplit (line, ":", -1);
-        if (g_strv_length (fields) == 7)
-        {
-            User *user = g_object_new (USER_TYPE, NULL);
-            user->priv->name = g_strdup (fields[0]);
-            user->priv->uid = atoi (fields[2]);
-            user->priv->gid = atoi (fields[3]);
-            user->priv->gecos = g_strdup (fields[4]);
-            user->priv->home_directory = g_strdup (fields[5]);
-            user->priv->shell = g_strdup (fields[6]);
-            users = g_list_append (users, user);
-        }
-        g_strfreev (fields);
-    }
-    g_strfreev (lines);
-
-    return users;
-}
-
 User *
 accounts_get_user_by_name (const gchar *username)
 {
+    struct passwd *user_info;
     User *user = NULL;
 
     g_return_val_if_fail (username != NULL, NULL);
 
     errno = 0;
-    if (passwd_file)
-    {
-        GList *users, *iter;
-
-        users = load_passwd_file ();
-        for (iter = users; iter; iter = iter->next)
-        {
-            User *u = iter->data;
-            if (strcmp (u->priv->name, username) == 0)
-            {
-                user = g_object_ref (u);
-                break;
-            }
-        }
-        g_list_free_full (users, g_object_unref);
-    }
-    else
-    {
-        struct passwd *user_info;
-
-        user_info = getpwnam (username);
-        if (user_info)
-            user = user_from_passwd (user_info);
-    }
+    user_info = getpwnam (username);
+    if (user_info)
+        user = user_from_passwd (user_info);
 
     if (!user && errno != 0)
         g_warning ("Unable to get information on user %s: %s", username, strerror (errno));
@@ -350,30 +272,11 @@ accounts_get_user_by_uid (uid_t uid)
     User *user = NULL;
 
     errno = 0;
-    if (passwd_file)
-    {
-        GList *users, *iter;
+    struct passwd *user_info;
 
-        users = load_passwd_file ();
-        for (iter = users; iter; iter = iter->next)
-        {
-            User *u = iter->data;
-            if (u->priv->uid == uid)
-            {
-                user = g_object_ref (u);
-                break;
-            }
-        }
-        g_list_free_full (users, g_object_unref);
-    }
-    else
-    {
-        struct passwd *user_info;
-
-        user_info = getpwuid (uid);
-        if (user_info)
-            user = user_from_passwd (user_info);
-    }
+    user_info = getpwuid (uid);
+    if (user_info)
+        user = user_from_passwd (user_info);
 
     if (!user && errno != 0)
         g_warning ("Unable to get information on user %d: %s", uid, strerror (errno));

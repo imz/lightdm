@@ -261,7 +261,15 @@ authentication_result_cb (PAMSession *authentication, int result, Greeter *greet
     g_debug ("Authenticate result for user %s: %s", pam_session_get_username (authentication), pam_session_strerror (authentication, result));
 
     if (result == PAM_SUCCESS)
-        g_debug ("User %s authorized", pam_session_get_username (authentication));
+    {
+        if (pam_session_get_user (authentication))
+            g_debug ("User %s authorized", pam_session_get_username (authentication));
+        else
+        {
+            g_debug ("User %s authorized, but no account of that name exists", pam_session_get_username (authentication));          
+            result = PAM_USER_UNKNOWN;
+        }
+    }
 
     send_end_authentication (greeter, greeter->priv->authentication_sequence_number, pam_session_get_username (authentication), result);
 }
@@ -306,6 +314,10 @@ handle_login (Greeter *greeter, guint32 sequence_number, const gchar *username)
 
     g_signal_connect (G_OBJECT (greeter->priv->authentication), "got-messages", G_CALLBACK (pam_messages_cb), greeter);
     g_signal_connect (G_OBJECT (greeter->priv->authentication), "authentication-result", G_CALLBACK (authentication_result_cb), greeter);
+
+    pam_session_set_item (greeter->priv->authentication, PAM_TTY,
+                          session_get_env (greeter->priv->session, "DISPLAY"));
+
     result = pam_session_authenticate (greeter->priv->authentication, &error);
     if (error)
         g_debug ("Failed to start authentication: %s", error->message);
@@ -393,6 +405,8 @@ static void
 handle_start_session (Greeter *greeter, const gchar *session)
 {
     gboolean result;
+    guint8 message[MAX_MESSAGE_LENGTH];
+    gsize offset = 0;
 
     if (strcmp (session, "") == 0)
         session = NULL;
@@ -411,15 +425,9 @@ handle_start_session (Greeter *greeter, const gchar *session)
         result = FALSE;
     }
 
-    if (!result)
-    {
-        guint8 message[MAX_MESSAGE_LENGTH];
-        gsize offset = 0;
-
-        write_header (message, MAX_MESSAGE_LENGTH, SERVER_MESSAGE_SESSION_RESULT, int_length (), &offset);
-        write_int (message, MAX_MESSAGE_LENGTH, 1, &offset);
-        write_message (greeter, message, offset);
-    }
+    write_header (message, MAX_MESSAGE_LENGTH, SERVER_MESSAGE_SESSION_RESULT, int_length (), &offset);
+    write_int (message, MAX_MESSAGE_LENGTH, result ? 0 : 1, &offset);
+    write_message (greeter, message, offset);
 }
 
 static void
@@ -638,19 +646,6 @@ greeter_get_authentication (Greeter *greeter)
 {
     g_return_val_if_fail (greeter != NULL, NULL);
     return greeter->priv->authentication;
-}
-
-void
-greeter_quit (Greeter *greeter)
-{
-    guint8 message[MAX_MESSAGE_LENGTH];
-    gsize offset = 0;
-
-    g_return_if_fail (greeter != NULL);
-
-    write_header (message, MAX_MESSAGE_LENGTH, SERVER_MESSAGE_SESSION_RESULT, int_length (), &offset);
-    write_int (message, MAX_MESSAGE_LENGTH, 0, &offset);
-    write_message (greeter, message, offset);
 }
 
 static PAMSession *

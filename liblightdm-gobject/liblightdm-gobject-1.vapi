@@ -27,6 +27,7 @@ namespace LightDM {
         public unowned string get_hint (string name);
         public unowned string default_session_hint { get; }
         public bool hide_users_hint { get; }
+        public bool lock_hint { get; }
         public bool has_guest_account_hint { get; }
         public unowned string select_user_hint { get; }
         public bool select_guest_hint { get; }
@@ -82,6 +83,9 @@ namespace LightDM {
     public class User : GLib.Object {
         public signal void changed ();
 
+        [CCode (array_length = false, array_null_terminated = true)]
+        public unowned string[] get_layouts ();
+
         public unowned string display_name { get; }
         public unowned string image { get; }
         public unowned string language { get; }
@@ -91,5 +95,7 @@ namespace LightDM {
         public unowned string real_name { get; }
         public unowned string home_directory { get; }
         public unowned string session { get; }
+        public unowned string background { get; }
+        public bool has_messages { get; }
     }
 }

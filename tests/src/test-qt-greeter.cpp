@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>
+#include <glib-object.h>
 #include <xcb/xcb.h>
 #include <QLightDM/Greeter>
 #include <QtCore/QSettings>
@@ -11,71 +12,105 @@
 #include "status.h"
 
 static QSettings *config = NULL;
+static TestGreeter *greeter = NULL;
 
 TestGreeter::TestGreeter ()
 {
-    connect (this, SIGNAL(showMessage(QString, QLightDM::MessageType)), SLOT(showMessage(QString, QLightDM::MessageType)));
-    connect (this, SIGNAL(showPrompt(QString, QLightDM::PromptType)), SLOT(showPrompt(QString, QLightDM::PromptType)));
+    connect (this, SIGNAL(showMessage(QString, QLightDM::Greeter::MessageType)), SLOT(showMessage(QString, QLightDM::Greeter::MessageType)));
+    connect (this, SIGNAL(showPrompt(QString, QLightDM::Greeter::PromptType)), SLOT(showPrompt(QString, QLightDM::Greeter::PromptType)));
     connect (this, SIGNAL(authenticationComplete()), SLOT(authenticationComplete()));
 }
 
-void TestGreeter::showMessage (QString text, QLightDM::MessageType type)
+void TestGreeter::showMessage (QString text, QLightDM::Greeter::MessageType type)
 {
-    notify_status ("GREETER SHOW-MESSAGE TEXT=\"%s\"", text.toAscii ().constData ());
+    status_notify ("GREETER %s SHOW-MESSAGE TEXT=\"%s\"", getenv ("DISPLAY"), text.toAscii ().constData ());
 }
 
-void TestGreeter::showPrompt (QString text, QLightDM::PromptType type)
+void TestGreeter::showPrompt (QString text, QLightDM::Greeter::PromptType type)
 {
-    notify_status ("GREETER SHOW-PROMPT TEXT=\"%s\"", text.toAscii ().constData ());
-
-    QString username = config->value ("test-greeter-config/username").toString ();
-    QString password = config->value ("test-greeter-config/password").toString ();
-
-    QString response;
-    if (config->value ("test-greeter-config/prompt-username", "false") == "true" && text == "login:")
-        response = username;
-    else if (password != "")
-        response = password;
-
-    if (response != "")
-    {
-        notify_status ("GREETER RESPOND TEXT=\"%s\"", response.toAscii ().constData ());
-        respond (response);
-    }
+    status_notify ("GREETER %s SHOW-PROMPT TEXT=\"%s\"", getenv ("DISPLAY"), text.toAscii ().constData ());
 }
 
 void TestGreeter::authenticationComplete ()
 {
     if (authenticationUser () != "")
-        notify_status ("GREETER AUTHENTICATION-COMPLETE USERNAME=%s AUTHENTICATED=%s",
+        status_notify ("GREETER %s AUTHENTICATION-COMPLETE USERNAME=%s AUTHENTICATED=%s",
+                       getenv ("DISPLAY"),
                        authenticationUser ().toAscii ().constData (), isAuthenticated () ? "TRUE" : "FALSE");
     else
-        notify_status ("GREETER AUTHENTICATION-COMPLETE AUTHENTICATED=%s", isAuthenticated () ? "TRUE" : "FALSE");
-    if (!isAuthenticated ())
-        return;
-
-    if (!startSessionSync (config->value ("test-greeter-config/session").toString ()))
-        notify_status ("GREETER SESSION-FAILED");
+        status_notify ("GREETER %s AUTHENTICATION-COMPLETE AUTHENTICATED=%s", getenv ("DISPLAY"), isAuthenticated () ? "TRUE" : "FALSE");
 }
 
 static void
 signal_cb (int signum)
 {
-    notify_status ("GREETER TERMINATE SIGNAL=%d", signum);
+    status_notify ("GREETER %s TERMINATE SIGNAL=%d", getenv ("DISPLAY"), signum);
     exit (EXIT_SUCCESS);
 }
 
-int main(int argc, char *argv[])
+static void
+request_cb (const gchar *request)
 {
+    gchar *r;
+  
+    r = g_strdup_printf ("GREETER %s AUTHENTICATE", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+        greeter->authenticate ();
+    g_free (r);
+
+    r = g_strdup_printf ("GREETER %s AUTHENTICATE USERNAME=", getenv ("DISPLAY"));
+    if (g_str_has_prefix (request, r))
+        greeter->authenticate (request + strlen (r));
+    g_free (r);
+
+    r = g_strdup_printf ("GREETER %s AUTHENTICATE-GUEST", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+        greeter->authenticateAsGuest ();
+    g_free (r);
+
+    r = g_strdup_printf ("GREETER %s RESPOND TEXT=\"", getenv ("DISPLAY"));
+    if (g_str_has_prefix (request, r))
+    {
+        gchar *text = g_strdup (request + strlen (r));
+        text[strlen (text) - 1] = '\0';
+        greeter->respond (text);
+        g_free (text);
+    }
+    g_free (r);
+
+    r = g_strdup_printf ("GREETER %s START-SESSION", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+    {
+        if (!greeter->startSessionSync ())
+            status_notify ("GREETER %s SESSION-FAILED", getenv ("DISPLAY"));
+    }
+    g_free (r);
+
+    r = g_strdup_printf ("GREETER %s START-SESSION SESSION=", getenv ("DISPLAY"));
+    if (g_str_has_prefix (request, r))
+    {
+        if (!greeter->startSessionSync (request + strlen (r)))
+            status_notify ("GREETER %s SESSION-FAILED", getenv ("DISPLAY"));
+    }
+    g_free (r);
+}
+
+int
+main(int argc, char *argv[])
+{
+    g_type_init ();
+
+    status_connect (request_cb);
+
     QCoreApplication app(argc, argv);
 
     signal (SIGINT, signal_cb);
     signal (SIGTERM, signal_cb);
 
-    notify_status ("GREETER START");
+    status_notify ("GREETER %s START", getenv ("DISPLAY"));
 
     if (getenv ("LIGHTDM_TEST_CONFIG"))
-        config = new QSettings(getenv ("LIGHTDM_TEST_CONFIG"), QSettings::IniFormat);
+        config = new QSettings (getenv ("LIGHTDM_TEST_CONFIG"), QSettings::IniFormat);
     else
         config = new QSettings();
 
@@ -83,64 +118,27 @@ int main(int argc, char *argv[])
 
     if (xcb_connection_has_error (connection))
     {
-        notify_status ("GREETER FAIL-CONNECT-XSERVER %s", getenv ("DISPLAY"));
+        status_notify ("GREETER %s FAIL-CONNECT-XSERVER", getenv ("DISPLAY"));
         return EXIT_FAILURE;
     }
 
-    notify_status ("GREETER CONNECT-XSERVER %s", getenv ("DISPLAY"));
+    status_notify ("GREETER %s CONNECT-XSERVER", getenv ("DISPLAY"));
 
-    TestGreeter *greeter = new TestGreeter();
+    greeter = new TestGreeter();
   
-    notify_status ("GREETER CONNECT-TO-DAEMON");  
+    status_notify ("GREETER %s CONNECT-TO-DAEMON", getenv ("DISPLAY"));
     if (!greeter->connectSync())
     {
-        notify_status ("GREETER FAIL-CONNECT-DAEMON");
+        status_notify ("GREETER %s FAIL-CONNECT-DAEMON", getenv ("DISPLAY"));
         return EXIT_FAILURE;
     }
 
-    notify_status ("GREETER CONNECTED-TO-DAEMON");
+    status_notify ("GREETER %s CONNECTED-TO-DAEMON", getenv ("DISPLAY"));
 
     if (greeter->selectUserHint() != "")
-    {
-        notify_status ("GREETER AUTHENTICATE-SELECTED USERNAME=%s", greeter->selectUserHint ().toAscii ().constData ());
-        greeter->authenticate (greeter->selectUserHint ());
-    }
-    else
-    {
-        QString login_lock = QString (getenv ("LIGHTDM_TEST_HOME_DIR")) + "/.greeter-logged-in";
-        FILE *f = fopen (login_lock.toAscii (), "r");
-        if (f == NULL)
-        {
-            if (config->value ("test-greeter-config/login-guest", "false") == "true")
-            {
-                notify_status ("GREETER AUTHENTICATE-GUEST");
-                greeter->authenticateAsGuest ();
-            }
-            else if (config->value ("test-greeter-config/prompt-username", "false") == "true")
-            {
-                notify_status ("GREETER AUTHENTICATE");
-                greeter->authenticate ();
-            }
-            else
-            {
-                QString username = config->value ("test-greeter-config/username").toString ();
-                if (username != "")
-                {
-                    notify_status ("GREETER AUTHENTICATE USERNAME=%s", username.toAscii ().constData ());
-                    greeter->authenticate (username);
-                }
-            }
-
-            /* Write lock to stop repeatedly logging in */
-            f = fopen (login_lock.toAscii (), "w");
-            fclose (f);
-        }
-        else
-        {
-            qDebug () << "Not logging in, lock file detected " << login_lock;
-            fclose (f);
-        }
-    }
+        status_notify ("GREETER %s SELECT-USER-HINT USERNAME=%s", getenv ("DISPLAY"), greeter->selectUserHint ().toAscii ().constData ());
+    if (greeter->lockHint())
+        status_notify ("GREETER %s LOCK-HINT", getenv ("DISPLAY"));
 
     return app.exec();
 }

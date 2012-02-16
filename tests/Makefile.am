@@ -17,6 +17,15 @@ TESTS = \
 	test-autologin-guest \
 	test-autologin-guest-fail-setup-script \
 	test-autologin-guest-logout \
+	test-user-renamed \
+	test-user-renamed-invalid \
+	test-keyboard-layout \
+	test-no-keyboard-layout \
+	test-default-keyboard-layout \
+	test-keyboard-variants \
+	test-language \
+	test-no-language \
+	test-language-no-accounts-service \
 	test-login-gobject \
 	test-login-gobject-manual \
 	test-login-gobject-manual-previous-session \
@@ -32,8 +41,24 @@ TESTS = \
 	test-login-gobject-guest-no-setup-script \
 	test-login-gobject-guest-fail-setup-script \
 	test-login-gobject-guest-logout \
+	test-login-python \
+	test-login-python-manual \
+	test-login-python-manual-previous-session \
+	test-login-python-no-password \
+	test-login-python-previous-session \
+	test-login-python-wrong-password \
+	test-login-python-invalid-user \
+	test-login-python-invalid-session \
+	test-login-python-logout \
+	test-login-python-pick-session \
+	test-login-python-guest \
+	test-login-python-guest-disabled \
+	test-login-python-guest-no-setup-script \
+	test-login-python-guest-fail-setup-script \
+	test-login-python-guest-logout \
 	test-login-session-crash \
 	test-login-xserver-crash \
+	test-home-dir-on-authenticate \
 	test-plymouth-active-vt \
 	test-plymouth-inactive-vt \
 	test-plymouth-no-seat \
@@ -41,16 +66,25 @@ TESTS = \
 	test-script-hook-fail-display-setup \
 	test-script-hook-fail-greeter-setup \
 	test-script-hook-fail-session-setup \
+    test-lock-seat \
+    test-lock-session \
 	test-switch-to-greeter \
 	test-switch-to-guest \
 	test-switch-to-user \
+	test-switch-to-users \
+	test-switch-to-user-existing-session \
+	test-switch-to-user-no-password \
+	test-switch-to-user-logout \
 	test-vnc-login \
-	test-xdmcp-login
+	test-xdmcp-login \
+	test-no-accounts-service \
+	test-no-console-kit
 
-#	test-autologin-session-exit-error
-#	test-login-gobject-session-exit-error
-#	test-login-qt-session-exit-error
+#	test-session-exit-error
 #	test-greeter-no-exit
+#   test-gobject-change-password
+#   test-qt-change-password
+#   test-autologin-create-directory
 
 if COMPILE_LIBLIGHTDM_QT
 TESTS += \
@@ -73,7 +107,10 @@ endif
 
 EXTRA_DIST = \
 	$(TESTS) \
+	data/system.conf \
+	data/session.conf \
 	data/xgreeters/test-gobject-greeter.desktop \
+	data/xgreeters/test-python-greeter.desktop \
 	data/xgreeters/test-qt-greeter.desktop \
 	data/xsessions/alternative.desktop \
 	data/xsessions/default.desktop \
@@ -91,6 +128,12 @@ EXTRA_DIST = \
 	scripts/greeter-not-installed.conf \
 	scripts/greeter-xserver-crash.conf \
 	scripts/headless.conf \
+	scripts/home-dir-on-authenticate.conf \
+	scripts/keyboard-layout.conf \
+	scripts/language.conf \
+	scripts/language-no-accounts-service.conf \
+	scripts/lock-seat.conf \
+	scripts/lock-session.conf \
 	scripts/login.conf \
 	scripts/login-guest.conf \
 	scripts/login-guest-disabled.conf \
@@ -108,7 +151,11 @@ EXTRA_DIST = \
 	scripts/login-session-crash.conf \
 	scripts/login-wrong-password.conf \
 	scripts/login-xserver-crash.conf \
+	scripts/no-accounts-service.conf \
 	scripts/no-config.conf \
+	scripts/no-console-kit.conf \
+	scripts/no-keyboard-layout.conf \
+	scripts/no-language.conf \
 	scripts/plymouth-active-vt.conf \
 	scripts/plymouth-inactive-vt.conf \
 	scripts/plymouth-no-seat.conf \
@@ -119,6 +166,12 @@ EXTRA_DIST = \
 	scripts/switch-to-greeter.conf \
 	scripts/switch-to-guest.conf \
 	scripts/switch-to-user.conf \
+	scripts/switch-to-users.conf \
+	scripts/switch-to-user-existing-session.conf \
+	scripts/switch-to-user-logout.conf \
+	scripts/switch-to-user-no-password.conf \
+	scripts/user-renamed.conf \
+	scripts/user-renamed-invalid.conf \
 	scripts/vnc-login.conf \
 	scripts/xdmcp-login.conf \
 	scripts/xserver-fail-start.conf

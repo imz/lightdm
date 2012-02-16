@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <xcb/xcb.h>
 #include <glib.h>
+#include <glib-object.h>
+#include <gio/gio.h>
 
 #include "status.h"
 
@@ -14,8 +16,60 @@ static GKeyFile *config;
 static void
 quit_cb (int signum)
 {
-    notify_status ("SESSION TERMINATE SIGNAL=%d", signum);
+    status_notify ("SESSION %s TERMINATE SIGNAL=%d", getenv ("DISPLAY"), signum);
     exit (EXIT_SUCCESS);
+}
+
+static void
+request_cb (const gchar *request)
+{
+    gchar *r;
+  
+    r = g_strdup_printf ("SESSION %s LOGOUT", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+        exit (EXIT_SUCCESS);
+    g_free (r);
+  
+    r = g_strdup_printf ("SESSION %s CRASH", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+        kill (getpid (), SIGSEGV);
+    g_free (r);
+
+    r = g_strdup_printf ("SESSION %s LOCK-SEAT", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+    {
+        g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                     "org.freedesktop.DisplayManager",
+                                     getenv ("XDG_SEAT_PATH"),
+                                     "org.freedesktop.DisplayManager.Seat",
+                                     "Lock",
+                                     g_variant_new ("()"),
+                                     G_VARIANT_TYPE ("()"),
+                                     G_DBUS_CALL_FLAGS_NONE,
+                                     1000,
+                                     NULL,
+                                     NULL);
+        status_notify ("SESSION %s LOCK-SEAT", getenv ("DISPLAY"));
+    }
+    g_free (r);
+
+    r = g_strdup_printf ("SESSION %s LOCK-SESSION", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+    {
+        g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                     "org.freedesktop.DisplayManager",
+                                     getenv ("XDG_SESSION_PATH"),
+                                     "org.freedesktop.DisplayManager.Session",
+                                     "Lock",
+                                     g_variant_new ("()"),
+                                     G_VARIANT_TYPE ("()"),
+                                     G_DBUS_CALL_FLAGS_NONE,
+                                     1000,
+                                     NULL,
+                                     NULL);
+        status_notify ("SESSION %s LOCK-SESSION", getenv ("DISPLAY"));
+    }
+    g_free (r);
 }
 
 int
@@ -27,48 +81,31 @@ main (int argc, char **argv)
     signal (SIGINT, quit_cb);
     signal (SIGTERM, quit_cb);
 
+    g_type_init ();
+
+    loop = g_main_loop_new (NULL, FALSE);
+
+    status_connect (request_cb);
+
     if (argc > 1)
-        notify_status ("SESSION START NAME=%s USER=%s", argv[1], getenv ("USER"));
+        status_notify ("SESSION %s START NAME=%s USER=%s", getenv ("DISPLAY"), argv[1], getenv ("USER"));
     else
-        notify_status ("SESSION START USER=%s", getenv ("USER"));
+        status_notify ("SESSION %s START USER=%s", getenv ("DISPLAY"), getenv ("USER"));
 
     config = g_key_file_new ();
     if (g_getenv ("LIGHTDM_TEST_CONFIG"))
         g_key_file_load_from_file (config, g_getenv ("LIGHTDM_TEST_CONFIG"), G_KEY_FILE_NONE, NULL);
 
-    loop = g_main_loop_new (NULL, FALSE);
-
     connection = xcb_connect (NULL, NULL);
 
     if (xcb_connection_has_error (connection))
     {
-        notify_status ("SESSION CONNECT-XSERVER-ERROR");
+        status_notify ("SESSION %s CONNECT-XSERVER-ERROR", getenv ("DISPLAY"));
         return EXIT_FAILURE;
     }
 
-    notify_status ("SESSION CONNECT-XSERVER");
+    status_notify ("SESSION %s CONNECT-XSERVER", getenv ("DISPLAY"));
 
-    if (g_key_file_get_boolean (config, "test-session-config", "crash-xserver", NULL))
-    {
-        const gchar *name = "SIGSEGV";
-        notify_status ("SESSION CRASH-XSERVER");
-        xcb_intern_atom (connection, FALSE, strlen (name), name);
-        xcb_flush (connection);
-    }
-
-    if (g_key_file_get_boolean (config, "test-session-config", "logout", NULL))
-    {
-        sleep (1);
-        notify_status ("SESSION LOGOUT");
-        return EXIT_SUCCESS;
-    }
-
-    if (g_key_file_get_boolean (config, "test-session-config", "sigsegv", NULL))
-    {
-        notify_status ("SESSION CRASH");
-        kill (getpid (), SIGSEGV);
-    }
-  
     g_main_loop_run (loop);    
 
     return EXIT_SUCCESS;

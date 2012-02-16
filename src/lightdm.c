@@ -62,55 +62,54 @@ typedef struct
 #define LIGHTDM_BUS_NAME "org.freedesktop.DisplayManager"
 
 static void
-log_cb (const gchar *log_domain, GLogLevelFlags log_level,
-        const gchar *message, gpointer data)
+log_cb (const gchar *log_domain, GLogLevelFlags log_level, const gchar *message, gpointer data)
 {
+    const gchar *prefix;
+    gchar *text;
+
+    switch (log_level & G_LOG_LEVEL_MASK)
+    {
+    case G_LOG_LEVEL_ERROR:
+        prefix = "ERROR:";
+        break;
+    case G_LOG_LEVEL_CRITICAL:
+        prefix = "CRITICAL:";
+        break;
+    case G_LOG_LEVEL_WARNING:
+        prefix = "WARNING:";
+        break;
+    case G_LOG_LEVEL_MESSAGE:
+        prefix = "MESSAGE:";
+        break;
+    case G_LOG_LEVEL_INFO:
+        prefix = "INFO:";
+        break;
+    case G_LOG_LEVEL_DEBUG:
+        prefix = "DEBUG:";
+        break;
+    default:
+        prefix = "LOG:";
+        break;
+    }
+
+    text = g_strdup_printf ("[%+.2fs] %s %s\n", g_timer_elapsed (log_timer, NULL), prefix, message);
+
     /* Log everything to a file */
     if (log_fd >= 0)
     {
-        const gchar *prefix;
-        gchar *text;
         ssize_t n_written;
-
-        switch (log_level & G_LOG_LEVEL_MASK)
-        {
-        case G_LOG_LEVEL_ERROR:
-            prefix = "ERROR:";
-            break;
-        case G_LOG_LEVEL_CRITICAL:
-            prefix = "CRITICAL:";
-            break;
-        case G_LOG_LEVEL_WARNING:
-            prefix = "WARNING:";
-            break;
-        case G_LOG_LEVEL_MESSAGE:
-            prefix = "MESSAGE:";
-            break;
-        case G_LOG_LEVEL_INFO:
-            prefix = "INFO:";
-            break;
-        case G_LOG_LEVEL_DEBUG:
-            prefix = "DEBUG:";
-            break;
-        default:
-            prefix = "LOG:";
-            break;
-        }
-
-        text = g_strdup_printf ("[%+.2fs] %s %s\n", g_timer_elapsed (log_timer, NULL), prefix, message);
         n_written = write (log_fd, text, strlen (text));
         if (n_written < 0)
             ; /* Check result so compiler doesn't warn about it */
-        g_free (text);
     }
 
-    /* Only show debug if requested */
-    if (log_level & G_LOG_LEVEL_DEBUG) {
-        if (debug)
-            g_log_default_handler (log_domain, log_level, message, data);
-    }
+    /* Log to stderr if requested */
+    if (debug)
+        g_printerr ("%s", text);
     else
-        g_log_default_handler (log_domain, log_level, message, data);    
+        g_log_default_handler (log_domain, log_level, message, data);
+
+    g_free (text);
 }
 
 static void
@@ -143,19 +142,6 @@ signal_cb (Process *process, int signum)
 static gboolean
 exit_cb (gpointer data)
 {
-    exit (exit_code);
-}
-
-static void
-display_manager_stopped_cb (DisplayManager *display_manager)
-{
-    g_debug ("Stopping Light Display Manager");
-
-    /* Mark as stopping because bus_acquired_cb can be called after this function, and even
-     * more weirdly display_manager is not NULL even though the following lines set it to
-     * be! */
-    stopping = TRUE;
-
     /* Clean up display manager */
     g_object_unref (display_manager);
     display_manager = NULL;
@@ -167,6 +153,14 @@ display_manager_stopped_cb (DisplayManager *display_manager)
     if (session_bus_entries)
         g_hash_table_unref (session_bus_entries);
 
+    g_debug ("Exiting with return value %d", exit_code);
+    exit (exit_code);
+}
+
+static void
+display_manager_stopped_cb (DisplayManager *display_manager)
+{
+    g_debug ("Stopping daemon");
     g_idle_add (exit_cb, NULL);
 }
 
@@ -243,37 +237,6 @@ set_seat_properties (Seat *seat, const gchar *config_section)
         }
         g_strfreev (keys);
     }
-}
-
-static Session *
-get_session_for_cookie (const gchar *cookie, Seat **seat)
-{
-    GList *link;
- 
-    for (link = display_manager_get_seats (display_manager); link; link = link->next)
-    {
-        Seat *s = link->data;
-        GList *l;
-         
-        for (l = seat_get_displays (s); l; l = l->next)
-        {
-            Display *display = l->data;
-            Session *session;
-
-            session = display_get_session (display);
-            if (!session)
-                continue;
-
-            if (g_strcmp0 (session_get_console_kit_cookie (session), cookie) == 0)
-            {
-                if (seat)
-                    *seat = s;
-                return session;
-            }
-        }
-    }
-
-    return NULL;
 }
 
 static void
@@ -368,47 +331,6 @@ handle_display_manager_call (GDBusConnection       *connection,
             g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Failed to start seat");
         g_object_unref (seat);
     }
-    /* NOTE: This method is deprecated, use the XSG_SEAT_PATH environment variable instead */
-    else if (g_strcmp0 (method_name, "GetSeatForCookie") == 0)
-    {       
-        gchar *cookie;
-        Seat *seat = NULL;
-        BusEntry *entry = NULL;
-
-        if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(s)")))
-            return;
-
-        g_variant_get (parameters, "(&s)", &cookie);
-
-        get_session_for_cookie (cookie, &seat);
-        if (seat)
-            entry = g_hash_table_lookup (seat_bus_entries, seat);
-        if (entry)
-            g_dbus_method_invocation_return_value (invocation, g_variant_new ("(o)", entry->path));
-        else // FIXME: Need to make proper error
-            g_dbus_method_invocation_return_error_literal (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Unable to find seat for cookie");
-    }
-
-    /* NOTE: This method is deprecated, use the XSG_SESSION_PATH environment variable instead */
-    else if (g_strcmp0 (method_name, "GetSessionForCookie") == 0)
-    {      
-        gchar *cookie;
-        Session *session;
-        BusEntry *entry = NULL;
-
-        if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(s)")))
-            return;
-
-        g_variant_get (parameters, "(&s)", &cookie);
-
-        session = get_session_for_cookie (cookie, NULL);
-        if (session)
-            entry = g_hash_table_lookup (session_bus_entries, session);
-        if (entry)
-            g_dbus_method_invocation_return_value (invocation, g_variant_new ("(o)", entry->path));
-        else // FIXME: Need to make proper error
-            g_dbus_method_invocation_return_error_literal (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Unable to find session for cookie");
-    }
 }
 
 static GVariant *
@@ -496,6 +418,34 @@ handle_seat_call (GDBusConnection       *connection,
         seat_switch_to_guest (seat, session_name);
         g_dbus_method_invocation_return_value (invocation, NULL);
     }
+    else if (g_strcmp0 (method_name, "Lock") == 0)
+    {
+        /* FIXME: Should only allow locks if have a session on this seat */
+        seat_lock (seat, NULL);
+        g_dbus_method_invocation_return_value (invocation, NULL);
+    }
+}
+
+static Seat *
+get_seat_for_session (Session *session)
+{
+    GList *seat_link;
+
+    for (seat_link = display_manager_get_seats (display_manager); seat_link; seat_link = seat_link->next)
+    {
+        Seat *seat = seat_link->data;
+        GList *display_link;
+
+        for (display_link = seat_get_displays (seat); display_link; display_link = display_link->next)
+        {
+            Display *display = display_link->data;
+
+            if (display_get_session (display) == session)
+                return seat;
+        }
+    } 
+
+    return NULL;
 }
 
 static GVariant *
@@ -529,6 +479,17 @@ handle_session_call (GDBusConnection       *connection,
                      GDBusMethodInvocation *invocation,
                      gpointer               user_data)
 {
+    Session *session = user_data;
+
+    if (g_strcmp0 (method_name, "Lock") == 0)
+    {
+        Seat *seat;
+
+        seat = get_seat_for_session (session);
+        /* FIXME: Should only allow locks if have a session on this seat */
+        seat_lock (seat, user_get_name (session_get_user (session)));
+        g_dbus_method_invocation_return_value (invocation, NULL);
+    }
 }
 
 static BusEntry *
@@ -588,6 +549,7 @@ start_session_cb (Display *display, Seat *seat)
 static void
 session_stopped_cb (Session *session, Seat *seat)
 {
+    g_signal_handlers_disconnect_matched (session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, seat);
     g_hash_table_remove (session_bus_entries, session);
 }
 
@@ -679,11 +641,14 @@ seat_added_cb (DisplayManager *display_manager, Seat *seat)
 static void
 seat_removed_cb (DisplayManager *display_manager, Seat *seat)
 {
+    gboolean exit_on_failure;
+
+    exit_on_failure = seat_get_boolean_property (seat, "exit-on-failure");
     g_hash_table_remove (seat_bus_entries, seat);
 
-    if (seat_get_boolean_property (seat, "exit-on-failure"))
+    if (exit_on_failure)
     {
-        g_debug ("Stopping lightdm, required seat has stopped");
+        g_debug ("Required seat has stopped");
         exit_code = EXIT_FAILURE;
         display_manager_stop (display_manager);
     }
@@ -707,14 +672,6 @@ bus_acquired_cb (GDBusConnection *connection,
         "    <method name='AddLocalXSeat'>"
         "      <arg name='display-number' direction='in' type='i'/>"
         "      <arg name='seat' direction='out' type='o'/>"
-        "    </method>"
-        "    <method name='GetSeatForCookie'>"
-        "      <arg name='cookie' direction='in' type='s'/>"
-        "      <arg name='seat' direction='out' type='o'/>"
-        "    </method>"
-        "    <method name='GetSessionForCookie'>"
-        "      <arg name='cookie' direction='in' type='s'/>"
-        "      <arg name='session' direction='out' type='o'/>"
         "    </method>"
         "    <signal name='SeatAdded'>"
         "      <arg name='seat' type='o'/>"
@@ -749,6 +706,7 @@ bus_acquired_cb (GDBusConnection *connection,
         "    <method name='SwitchToGuest'>"
         "      <arg name='session-name' direction='in' type='s'/>"
         "    </method>"
+        "    <method name='Lock'/>"    
         "  </interface>"
         "</node>";
     const gchar *session_interface =
@@ -756,13 +714,11 @@ bus_acquired_cb (GDBusConnection *connection,
         "  <interface name='org.freedesktop.DisplayManager.Session'>"
         "    <property name='Seat' type='o' access='read'/>"
         "    <property name='UserName' type='s' access='read'/>"
+        "    <method name='Lock'/>"
         "  </interface>"
         "</node>";
     GDBusNodeInfo *display_manager_info;
     GList *link;
-
-    if (stopping)
-        return;
 
     g_debug ("Acquired bus name %s", name);
 
@@ -859,13 +815,8 @@ main (int argc, char **argv)
     gboolean explicit_config = FALSE;
     gboolean test_mode = FALSE;
     gchar *pid_path = "/var/run/lightdm.pid";
-    gchar *xserver_command = NULL;
-    gchar *passwd_path = NULL;
     gchar *xsessions_dir = NULL;
     gchar *xgreeters_dir = NULL;
-    gchar *greeter_session = NULL;
-    gchar *user_session = NULL;
-    gchar *session_wrapper = NULL;
     gchar *config_dir;
     gchar *log_dir = NULL;
     gchar *run_dir = NULL;
@@ -873,8 +824,6 @@ main (int argc, char **argv)
     gchar *default_log_dir = g_strdup (LOG_DIR);
     gchar *default_run_dir = g_strdup (RUN_DIR);
     gchar *default_cache_dir = g_strdup (CACHE_DIR);
-    gchar *minimum_vt = NULL;
-    gchar *minimum_display_number = NULL;
     gboolean show_version = FALSE;
     GOptionEntry options[] = 
     {
@@ -887,30 +836,9 @@ main (int argc, char **argv)
         { "test-mode", 0, 0, G_OPTION_ARG_NONE, &test_mode,
           /* Help string for command line --test-mode flag */
           N_("Run as unprivileged user, skipping things that require root access"), NULL },
-        { "passwd-file", 0, 0, G_OPTION_ARG_STRING, &passwd_path,
-          /* Help string for command line --use-passwd flag */
-          N_("Use the given password file for authentication (for testing, requires --no-root)"), "FILE" },
         { "pid-file", 0, 0, G_OPTION_ARG_STRING, &pid_path,
           /* Help string for command line --pid-file flag */
           N_("File to write PID into"), "FILE" },
-        { "xserver-command", 0, 0, G_OPTION_ARG_STRING, &xserver_command,
-          /* Help string for command line --xserver-command flag */
-          N_("Command to run X servers"), "COMMAND" },
-        { "greeter-session", 0, 0, G_OPTION_ARG_STRING, &greeter_session,
-          /* Help string for command line --greeter-session flag */
-          N_("Greeter session"), "SESSION" },
-        { "user-session", 0, 0, G_OPTION_ARG_STRING, &user_session,
-          /* Help string for command line --user-session flag */
-          N_("User session"), "SESSION" },
-        { "session-wrapper", 0, 0, G_OPTION_ARG_STRING, &session_wrapper,
-          /* Help string for command line --session-wrapper flag */
-          N_("Session wrapper"), "SESSION" },
-        { "minimum-vt", 0, 0, G_OPTION_ARG_STRING, &minimum_vt,
-          /* Help string for command line --minimum-vt flag */
-          N_("Minimum VT to use for X servers"), "NUMBER" },
-        { "minimum-display-number", 0, 0, G_OPTION_ARG_STRING, &minimum_display_number,
-          /* Help string for command line --minimum-display-number flag */
-          N_("Minimum display number to use for X servers"), "NUMBER" },
         { "xsessions-dir", 0, 0, G_OPTION_ARG_STRING, &xsessions_dir,
           /* Help string for command line --xsessions-dir flag */
           N_("Directory to load X sessions from"), "DIRECTORY" },
@@ -925,7 +853,7 @@ main (int argc, char **argv)
           N_("Directory to store running state"), "DIRECTORY" },
         { "cache-dir", 0, 0, G_OPTION_ARG_STRING, &cache_dir,
           /* Help string for command line --cache-dir flag */
-          N_("Directory to cached information"), "DIRECTORY" },
+          N_("Directory to cache information"), "DIRECTORY" },
         { "version", 'v', 0, G_OPTION_ARG_NONE, &show_version,
           /* Help string for command line --version flag */
           N_("Show release version"), NULL },
@@ -933,7 +861,6 @@ main (int argc, char **argv)
     };
     GError *error = NULL;
 
-    g_thread_init (NULL);
     g_type_init ();
     loop = g_main_loop_new (NULL, FALSE);
 
@@ -943,7 +870,6 @@ main (int argc, char **argv)
                                            _("- Display Manager"));
     g_option_context_add_main_entries (option_context, options, GETTEXT_PACKAGE);
     g_option_context_set_ignore_unknown_options (option_context, TRUE);
-
     result = g_option_context_parse (option_context, &argc, &argv, &error);
     if (error)
         g_printerr ("%s\n", error->message);
@@ -996,13 +922,6 @@ main (int argc, char **argv)
             return EXIT_FAILURE;
         }
         g_free (xserver_path);
-    }
-
-    /* Don't allow to be run as root and use a password file (asking for danger!) */
-    if (getuid () == 0 && passwd_path)
-    {
-        g_printerr ("Only allowed to use --passwd-file when running with --no-root.\n"); 
-        return EXIT_FAILURE;
     }
 
     /* Make sure the system binary directory (where the greeters are installed) is in the path */
@@ -1096,12 +1015,6 @@ main (int argc, char **argv)
         config_set_string (config_get_instance (), "LightDM", "xgreeters-directory", XGREETERS_DIR);
 
     /* Override defaults */
-    if (minimum_vt)
-        config_set_integer (config_get_instance (), "LightDM", "minimum-vt", atoi (minimum_vt));
-    g_free (minimum_vt);
-    if (minimum_display_number)
-        config_set_integer (config_get_instance (), "LightDM", "minimum-display-number", atoi (minimum_display_number));
-    g_free (minimum_display_number);
     if (log_dir)
         config_set_string (config_get_instance (), "LightDM", "log-directory", log_dir);
     g_free (log_dir);
@@ -1117,18 +1030,6 @@ main (int argc, char **argv)
     if (xgreeters_dir)
         config_set_string (config_get_instance (), "LightDM", "xgreeters-directory", xgreeters_dir);
     g_free (xgreeters_dir);
-    if (xserver_command)
-        config_set_string (config_get_instance (), "SeatDefaults", "xserver-command", xserver_command);
-    g_free (xserver_command);
-    if (greeter_session)
-        config_set_string (config_get_instance (), "SeatDefaults", "greeter-session", greeter_session);
-    g_free (greeter_session);
-    if (user_session)
-        config_set_string (config_get_instance (), "SeatDefaults", "user-session", user_session);
-    g_free (user_session);
-    if (session_wrapper)
-        config_set_string (config_get_instance (), "SeatDefaults", "session-wrapper", session_wrapper);
-    g_free (session_wrapper);
 
     /* Create run and cache directories */
     dir = config_get_string (config_get_instance (), "LightDM", "log-directory");
@@ -1160,12 +1061,6 @@ main (int argc, char **argv)
 
     if (getuid () != 0)
         g_debug ("Running in user mode");
-    if (passwd_path)
-    {
-        g_debug ("Using password file '%s' for authentication", passwd_path);
-        user_set_use_passwd_file (passwd_path);
-        pam_session_set_use_passwd_file (passwd_path);
-    }
     if (getenv ("DISPLAY"))
         g_debug ("Using Xephyr for X servers");
 

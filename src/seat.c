@@ -192,7 +192,7 @@ switch_to_user (Seat *seat, const gchar *username, gboolean unlock)
         /* If already logged in, then switch to that display */
         if (g_strcmp0 (display_get_username (display), username) == 0)        
         {
-           if (username)
+            if (username)
                 g_debug ("Switching to existing session for user %s", username);
             else
                 g_debug ("Switching to existing greeter");
@@ -252,6 +252,7 @@ run_script (Seat *seat, Display *display, const gchar *script_name, User *user)
         process_set_env (script, "LIGHTDM_TEST_STATUS_SOCKET", g_getenv ("LIGHTDM_TEST_STATUS_SOCKET"));
         process_set_env (script, "LIGHTDM_TEST_CONFIG", g_getenv ("LIGHTDM_TEST_CONFIG"));
         process_set_env (script, "LIGHTDM_TEST_HOME_DIR", g_getenv ("LIGHTDM_TEST_HOME_DIR"));
+        process_set_env (script, "LD_PRELOAD", g_getenv ("LD_PRELOAD"));
         process_set_env (script, "LD_LIBRARY_PATH", g_getenv ("LD_LIBRARY_PATH"));
         process_set_env (script, "PATH", g_getenv ("PATH"));
     }
@@ -305,7 +306,7 @@ emit_upstart_signal (const gchar *signal)
     if (getuid () != 0)
         return;
 
-    gchar *cmd = g_strdup_printf ("/sbin/initctl -q emit %s DISPLAY_MANAGER=lightdm", signal);
+    gchar *cmd = g_strdup_printf ("initctl -q emit %s DISPLAY_MANAGER=lightdm", signal);
     g_spawn_command_line_async (cmd, NULL); /* OK if it fails, probably not installed */
     g_free (cmd);
 }
@@ -431,16 +432,17 @@ display_stopped_cb (Display *display, Seat *seat)
     g_object_unref (display);
 
     check_stopped (seat);
+
 }
 
 static gboolean
-switch_to_user_or_start_greeter (Seat *seat, const gchar *username, gboolean is_guest, const gchar *session_name, gboolean autologin)
+switch_to_user_or_start_greeter (Seat *seat, const gchar *username, gboolean use_existing, gboolean is_guest, const gchar *session_name, gboolean is_lock, gboolean autologin)
 {
     Display *display;
     DisplayServer *display_server;
 
     /* Switch to existing if it exists */
-    if (switch_to_user (seat, username, FALSE))
+    if (use_existing && switch_to_user (seat, username, FALSE))
         return TRUE;
 
     /* If one don't exist then start a greeter */
@@ -459,6 +461,8 @@ switch_to_user_or_start_greeter (Seat *seat, const gchar *username, gboolean is_
             g_debug ("Starting new display for greeter with guest selected");
         else if (username)
             g_debug ("Starting new display for greeter with user %s selected", username);
+        else if (is_lock)
+            g_debug ("Starting new display for greeter (lock screen)");
         else
             g_debug ("Starting new display for greeter");
     }
@@ -480,6 +484,8 @@ switch_to_user_or_start_greeter (Seat *seat, const gchar *username, gboolean is_
     display_set_greeter_session (display, seat_get_string_property (seat, "greeter-session"));
     display_set_session_wrapper (display, seat_get_string_property (seat, "session-wrapper"));
     display_set_hide_users_hint (display, seat_get_boolean_property (seat, "greeter-hide-users"));
+    if (is_lock)
+        display_set_lock_hint (display, TRUE);
     display_set_allow_guest (display, seat_get_allow_guest (seat));
     if (autologin)
         display_set_autologin_user (display, username, is_guest, 0);
@@ -508,7 +514,7 @@ seat_switch_to_greeter (Seat *seat)
         return FALSE;
 
     g_debug ("Switching to greeter");
-    return switch_to_user_or_start_greeter (seat, NULL, FALSE, NULL, FALSE);
+    return switch_to_user_or_start_greeter (seat, NULL, TRUE, FALSE, NULL, FALSE, FALSE);
 }
 
 gboolean
@@ -521,7 +527,7 @@ seat_switch_to_user (Seat *seat, const gchar *username, const gchar *session_nam
         return FALSE;
 
     g_debug ("Switching to user %s", username);
-    return switch_to_user_or_start_greeter (seat, username, FALSE, session_name, FALSE);
+    return switch_to_user_or_start_greeter (seat, username, TRUE, FALSE, session_name, FALSE, FALSE);
 }
 
 gboolean
@@ -536,7 +542,19 @@ seat_switch_to_guest (Seat *seat, const gchar *session_name)
         g_debug ("Switching to existing guest account %s", seat->priv->guest_username);
     else
         g_debug ("Switching to new guest account");
-    return switch_to_user_or_start_greeter (seat, seat->priv->guest_username, TRUE, session_name, TRUE);
+    return switch_to_user_or_start_greeter (seat, seat->priv->guest_username, TRUE, TRUE, session_name, FALSE, TRUE);
+}
+
+gboolean
+seat_lock (Seat *seat, const gchar *username)
+{
+    g_return_val_if_fail (seat != NULL, FALSE);
+
+    if (!seat->priv->can_switch)
+        return FALSE;
+
+    g_debug ("Locking seat");
+    return switch_to_user_or_start_greeter (seat, username, FALSE, FALSE, NULL, TRUE, FALSE);
 }
 
 void
@@ -577,11 +595,11 @@ seat_real_start (Seat *seat)
         autologin_username = NULL;
 
     if (autologin_username)
-        return switch_to_user_or_start_greeter (seat, autologin_username, FALSE, NULL, TRUE);
+        return switch_to_user_or_start_greeter (seat, autologin_username, TRUE, FALSE, NULL, FALSE, TRUE);
     else if (seat_get_boolean_property (seat, "autologin-guest"))
-        return switch_to_user_or_start_greeter (seat, NULL, TRUE, NULL, TRUE);
+        return switch_to_user_or_start_greeter (seat, NULL, TRUE, TRUE, NULL, FALSE, TRUE);
     else
-        return switch_to_user_or_start_greeter (seat, NULL, FALSE, NULL, FALSE);
+        return switch_to_user_or_start_greeter (seat, NULL, TRUE, FALSE, NULL, FALSE, FALSE);
 }
 
 static void
@@ -597,6 +615,11 @@ seat_real_set_active_display (Seat *seat, Display *display)
         {
             g_debug ("Stopping greeter display being switched from");
             display_stop (seat->priv->active_display);
+        }
+        /* Otherwise lock it */
+        else
+        {
+            display_lock (seat->priv->active_display);
         }
         g_object_unref (seat->priv->active_display);
     }

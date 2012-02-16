@@ -1,34 +1,83 @@
-Overview of changes in lightdm 1.0.6
+Overview of changes in lightdm 1.1.3
 
-    * Use lchown for correcting ownership of ~/.Xauthority instead of chown
+    * Actually return the system default keyboard layout, not just 'us'
+    * Add keyboard layout variants to list of keyboard layouts
+    * Check accountsservice as well as .dmrc for users' layouts
+    * Add lightdm_user_get_layouts() to query the configured list of layouts
+      on a per-user basis
+    * Add Lock D-Bus method that locks the seat and provides a hint to the
+      greeter to be in lock mode.
+    * Automatically lock sessions when switching away from them
+    * Add a has-messages property to liblightdm
+    * Add regression tests for PAM modules changing usernames
+    * Don't use g_key_file_unref, it requires glib 2.32
 
-Overview of changes in lightdm 1.0.5
+Overview of changes in lightdm 1.1.2
 
-    * Relax AppArmor guest profile to allow compiz to start
-    * Connect up VNC settings for width, height, depth
+    * Add regression tests for getting the user language and layout
+    * Stop accidentally distributing libsystem
+    * Fix introspection bindings not containing any methods
+    * lightdm-set-defaults can now set the autologin user
+    * Add Python greeter regression tests (representative of all introspection
+      based greeters)
+    * Wait for the VT to become active when switching to avoid a suspected
+      race condition somewhere between LightDM, X, ConsoleKit and the kernel.
+    * Stop lightdm_greeter_start_session_sync() blocking on success.
 
-Overview of changes in lightdm 1.0.4
+Overview of changes in lightdm 1.1.1
 
-    * Fix --enable-gtk-greeter=yes not working
+    * Add a --disable-tests option
+    * Add note to AUTHORS file where to find author list
+    * Update build system to find moc/uic
+    * Fix non-distributed tests/src/lightdm-session
     * Fix X sessions with arguments in Exec not working
     * Use previous session for automatic login or if greeter does not request
       one.
-    * Correct ownership of ~/.Xauthority if upgrading from buggy version of
-      LightDM that had it root owned.
     * Set default resolution of VNC to 1024x768, add settings for width, height,
       depth into lightdm.conf.
     * AppArmor profile: Fix broken gnome-keyring and dbus/gwibber, and quiesce
       annoying kernel audit messages for privileges that we definitively do not
       want to grant.
     * Set LOGNAME environment variable
+    * Don't set USERNAME environment variable - this is not specified in POSIX,
+      please report if this causes any major problems.
+    * Drop privileges when reading ~/.dmrc
+    * Move the GTK+ and Qt greeters into their own projects
+    * Fix crash when quitting with newer GLib
+    * Fix crash calling lightdm_get_layout
+    * Support for reading users' backgrounds from Accounts Service
+    * Fix --debug working with new glib
+    * Support PAM requesting a change of password
+    * Update build system to work with automake 1.11.2
+    * Run tests inside their own system D-Bus, simulating ConsoleKit and
+      AccountsService
+    * Add regression test for users that have their home directory created after
+      authentication.
+    * Move lightdm-guest-session from libexec to pkglibexec directory
 
-Overview of changes in lightdm 1.0.3
+Overview of changes in lightdm 1.1.0
 
-    * Fix reference counting issue in ConsoleKit code
-    * Really add the lightdm-guest-session-wrapper
-
-Overview of changes in lightdm 1.0.2
-
+    * Remove GetSeatForCookie and GetSessionForCookie D-Bus methods
+    * Switching to a user without a password bypasses the greeter
+    * Use LD_PRELOAD to intercept system calls for testing
+    * Removed the --passwd-file option as not required for testing anymore
+    * Rename test-xserver to X and remove --xserver-command option
+    * Make a test session wrapper and remove --session-wrapper option
+    * Remove unused --user-session, --greeter-session, --minimum-vt,
+      --minimum-display-number options
+    * Use 'default' as the default greeter (make a symlink)
+    * GTK greeter now initializes i18n
+    * GTK greeter now remembers last user
+    * Start authentication for automtically selected user in GTK greeter
+    * Don't resize GTK greeter on each click
+    * Start authentication when scrolling through GTK greeter entries
+    * Link liblightdm-qt against QtGui
+    * Fix liblightdm-qt crashing when face images are installed
+    * Set correct permissions on session log files
+    * Introduce a lightdm-guest-session-wrapper session command which MAC
+      systems like AppArmor and SELinux can use for attaching a restrictive
+      policy to guest sessions.
+    * Provide an AppArmor profile for guest session lockdown.
     * Fix daemon from blocking if Accounts Service does not exist
     * Fix greeter log file not being written
     * Don't set LANG environment variable if using Accounts Service.
@@ -38,22 +87,8 @@ Overview of changes in lightdm 1.0.2
     * Fix over allocation of read buffer in greeter protocol
     * Make sure objects are cleaned up on exit
     * Fix minor memory leaks
-    * Fix hugely oversized allocation in greeter buffer.  Can trigger
-      crashes when entering very long passwords.
-
-Overview of changes in lightdm 1.0.1
-
-    * GTK greeter now remembers last user
-    * GTK greeter now initializes i18n
-    * Start authentication for automatically selected user in GTK greeter
-    * Link liblightdm-qt against QtGui
-    * Fix liblightdm-qt crashing when face images are installed
-    * Set correct permissions on session log files
-    * Prefer a locale with a codeset over one without for setting LANG 
-    * Introduce a lightdm-guest-session-wrapper session command which MAC
-      systems like AppArmor and SELinux can use for attaching a restrictive
-      policy to guest sessions.
-    * Provide an AppArmor profile for guest session lockdown.
+    * Fix reference counting issue in ConsoleKit code
+    * Fix --enable-gtk-greeter=yes not working
 
 Overview of changes in lightdm 1.0.0
 

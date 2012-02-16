@@ -1,7 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT(lightdm, 1.0.6)
-AC_USE_SYSTEM_EXTENSIONS
+AC_INIT(lightdm, 1.1.3)
 AC_CONFIG_MACRO_DIR(m4)
 AC_CONFIG_HEADER(config.h)
 AM_INIT_AUTOMAKE
@@ -23,7 +22,7 @@ dnl ###########################################################################
 AC_CHECK_HEADERS(security/pam_appl.h, [], AC_MSG_ERROR(PAM not found))
 
 PKG_CHECK_MODULES(LIGHTDM, [
-    glib-2.0
+    glib-2.0 >= 2.24
     gio-2.0 >= 2.26
     gio-unix-2.0
     xdmcp
@@ -85,63 +84,30 @@ compile_liblightdm_qt=no
 if test x"$enable_liblightdm_qt" = "xauto"; then
     PKG_CHECK_MODULES(LIBLIGHTDM_QT, [
         QtCore
-        QtGui
         QtDBus
-        QtNetwork
         QtGui
     ], compile_liblightdm_qt=yes, compile_liblightdm_qt=no)
+    QT4_BINDIR=`$PKG_CONFIG Qt --variable bindir`
+    AC_CHECK_TOOLS(MOC, [moc-qt4 moc],, [$QT4_BINDIR:$PATH])
 elif test x"$enable_liblightdm_qt" = "xyes"; then
     PKG_CHECK_MODULES(LIBLIGHTDM_QT, [
         QtCore
         QtGui
         QtDBus
-        QtNetwork
     ])
+    QT4_BINDIR=`$PKG_CONFIG Qt --variable bindir`
+    AC_CHECK_TOOLS(MOC, [moc-qt4 moc],, [$QT4_BINDIR:$PATH])
     compile_liblightdm_qt=yes
 fi
 AM_CONDITIONAL(COMPILE_LIBLIGHTDM_QT, test x"$compile_liblightdm_qt" != "xno")
 
-AC_ARG_ENABLE(qt-greeter,
-	AS_HELP_STRING([--enable-qt-greeter],[Build QT greeter [[default=auto]]]),
-	[enable_qt_greeter=$enableval],
-	[enable_qt_greeter="auto"])
-compile_qt_greeter=no
-if test x"$enable_qt_greeter" = "xauto"; then
-    PKG_CHECK_MODULES(LIGHTDM_QT_GREETER, [
-        QtCore
-        QtGui
-    ], compile_qt_greeter=yes, compile_qt_greeter=no)
-elif test x"$enable_qt_greeter" = "xyes"; then
-    PKG_CHECK_MODULES(LIGHTDM_QT_GREETER, [
-        QtCore
-        QtGui
-    ])
-    compile_qt_greeter=yes
-fi
-AM_CONDITIONAL(COMPILE_QT_GREETER, test $compile_qt_greeter = yes)
-
-AC_ARG_ENABLE(gtk-greeter,
-	AS_HELP_STRING([--enable-gtk-greeter],[Build GTK greeter [[default=auto]]]),
-	[enable_gtk_greeter=$enableval],
-	[enable_gtk_greeter="auto"])
-compile_gtk_greeter=no
-if test x"$enable_gtk_greeter" = "xauto"; then
-    PKG_CHECK_MODULES(LIGHTDM_GTK_GREETER, [
-        gtk+-3.0
-        gmodule-export-2.0
-    ], compile_gtk_greeter=yes, compile_gtk_greeter=no)
-elif test x"$enable_gtk_greeter" = "xyes"; then
-    PKG_CHECK_MODULES(LIGHTDM_GTK_GREETER, [
-        gtk+-3.0
-        gmodule-export-2.0
-    ])
-    compile_gtk_greeter=yes
-fi
-AM_CONDITIONAL(COMPILE_GTK_GREETER, test $compile_gtk_greeter = yes)
+AC_MSG_CHECKING(whether to build tests)
+AC_ARG_ENABLE(tests,
+        AS_HELP_STRING([--disable-tests], [Disable tests building]),
+        [], [enable_tests="yes"])
+AM_CONDITIONAL(COMPILE_TESTS, test x"$enable_tests" != "xno")
 
 AC_PATH_PROG(GLIB_GENMARSHAL, glib-genmarshal)
-AC_PATH_PROG(DBUSBINDINGTOOL, dbus-binding-tool)
-AC_SUBST(DBUSBINDINGTOOL)
 
 dnl ###########################################################################
 dnl Configurable values
@@ -158,13 +124,7 @@ AC_ARG_WITH(user-session,
 AC_SUBST(USER_SESSION)
 AC_DEFINE_UNQUOTED(USER_SESSION, "$USER_SESSION", User session)
 
-if test $compile_gtk_greeter = yes; then
-GREETER_SESSION=lightdm-gtk-greeter
-elif test $compile_qt_greeter = yes; then
-GREETER_SESSION=lightdm-qt-greeter
-else
-GREETER_SESSION=
-fi
+GREETER_SESSION=default
 AC_ARG_WITH(greeter-session,
             AS_HELP_STRING(--with-greeter-session=<session>,
                            Greeter session),
@@ -209,13 +169,10 @@ Makefile
 data/Makefile
 data/init/Makefile
 doc/Makefile
-greeters/Makefile
-greeters/gtk/Makefile
-greeters/qt/Makefile
 liblightdm-gobject/liblightdm-gobject-1.pc
 liblightdm-gobject/Makefile
 liblightdm-qt/Makefile
-liblightdm-qt/liblightdm-qt-1.pc
+liblightdm-qt/liblightdm-qt-2.pc
 po/Makefile.in
 src/Makefile
 tests/Makefile
@@ -239,6 +196,5 @@ echo "
         liblightdm-gobject:       $compile_liblightdm_gobject
         GObject introspection:    $found_introspection
         liblightdm-qt:            $compile_liblightdm_qt
-        GTK+ Greeter:             $compile_gtk_greeter
-        Qt Greeter:               $compile_qt_greeter
+        Enable tests:             $enable_tests
 "
