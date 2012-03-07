@@ -25,7 +25,6 @@ Requires: accountsservice
 
 BuildRequires: gcc-c++ intltool gnome-common
 BuildRequires: glib2-devel libgio-devel >= 2.26
-BuildRequires: libgtk+3-devel
 BuildRequires: libxcb-devel libXdmcp-devel
 BuildRequires: libdbus-glib-devel
 BuildRequires: gtk-doc
@@ -113,8 +112,6 @@ This package provides a Qt-based LightDM greeter engine.
 %prep
 %setup
 %patch1 -p1
-%__subst "s|moc |moc-qt4 |" liblightdm-qt/Makefile.am greeters/qt/Makefile.am tests/src/Makefile.am
-%__subst "s|uic |uic-qt4 |" liblightdm-qt/Makefile.am greeters/qt/Makefile.am tests/src/Makefile.am
 
 %build
 %autoreconf
@@ -156,12 +153,6 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
 %find_lang %name
 
-cd %buildroot
-# Add alternatives for xgreeters
-mkdir -p ./%_altdir
-printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%name-gtk-greeter.desktop\t100\n' >./%_altdir/%name-gtk-greeter
-printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%name-qt-greeter.desktop\t200\n' >./%_altdir/%name-qt-greeter
-
 %pre
 %_sbindir/groupadd -r -f _ldm >/dev/null 2>&1 || :
 %_sbindir/useradd -M -r -d %_localstatedir/lib/ldm -s /bin/false -c "LightDM daemon" -g _ldm _ldm >/dev/null 2>&1 || :
@@ -180,7 +171,6 @@ printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%
 %_sbindir/%name
 %_man1dir/%name.*
 %_bindir/dm-tool
-%dir %_datadir/xgreeters
 %_libexecdir/*
 %attr(775,root,_ldm) %dir %_localstatedir/log/%name
 %attr(775,_ldm,_ldm) %dir %_localstatedir/cache/%name
@@ -190,13 +180,6 @@ printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%
 %if_enabled gobject
 %files -n liblightdm-gobject
 %_libdir/liblightdm-gobject-?.so.*
-
-%files gtk-greeter
-%_altdir/%name-gtk-greeter
-%_sbindir/%name-gtk-greeter
-%_datadir/%name-gtk-greeter
-%_datadir/xgreeters/%name-gtk-greeter.desktop
-%config(noreplace) %_sysconfdir/%name/%name-gtk-greeter.conf
 
 %if_enabled introspection
 %files gir
@@ -210,11 +193,6 @@ printf '%_datadir/xgreeters/%name-default-greeter.desktop\t%_datadir/xgreeters/%
 %if_enabled qt
 %files -n liblightdm-qt
 %_libdir/liblightdm-qt-?.so.*
-
-%files qt-greeter
-%_altdir/%name-qt-greeter
-%_sbindir/%name-qt-greeter
-%_datadir/xgreeters/%name-qt-greeter.desktop
 %endif
 
 %files devel
