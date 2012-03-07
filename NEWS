@@ -1,3 +1,21 @@
+Overview of changes in lightdm 1.1.6
+
+    * Fix session wrapper working the same as it did in 1.1.3
+
+Overview of changes in lightdm 1.1.5
+
+    * Stop file descriptors leaking into the session processes
+
+Overview of changes in lightdm 1.1.4
+
+    * Change session directory once user permissions are set so it works
+      on NFS filesystems that don't allow root to access files.
+    * Restructure session code so the PAM authentication is run in its
+      own process.
+    * Set PAM_XDISPLAY and PAM_XAUTHDATA pam items
+    * Don't send session stdout to .xsession-errors
+    * Fix Qt bindings crash when removing a user
+
 Overview of changes in lightdm 1.1.3
 
     * Actually return the system default keyboard layout, not just 'us'

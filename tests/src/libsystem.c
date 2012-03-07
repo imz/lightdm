@@ -4,6 +4,7 @@
 #include <pwd.h>
 #include <security/pam_appl.h>
 #include <unistd.h>
+#include <fcntl.h>
 #define __USE_GNU
 #include <dlfcn.h>
 #ifdef __linux__
@@ -23,6 +24,7 @@ struct pam_handle
     char *service_name;
     char *user;
     char *tty;
+    char **envlist;
     struct pam_conv conversation;
 };
 
@@ -58,19 +60,31 @@ setuid (uid_t uid)
 
 #ifdef __linux__
 int
-open (const char *pathname, int flags, mode_t mode)
+open (const char *pathname, int flags, ...)
 {
     int (*_open) (const char * pathname, int flags, mode_t mode);
+    int mode = 0;
+  
+    if (flags & O_CREAT)
+    {
+        va_list ap;
+        va_start (ap, flags);
+        mode = va_arg (ap, int);
+        va_end (ap);
+    }
 
     _open = (int (*)(const char * pathname, int flags, mode_t mode)) dlsym (RTLD_NEXT, "open");      
     if (strcmp (pathname, "/dev/console") == 0)
     {
         if (console_fd < 0)
-            console_fd = _open ("/dev/null", 0, 0);
+        {
+            console_fd = _open ("/dev/null", flags, mode);
+            fcntl (console_fd, F_SETFD, FD_CLOEXEC);
+        }
         return console_fd;
     }
     else
-        return _open(pathname, flags, mode);
+        return _open (pathname, flags, mode);
 }
 
 int
@@ -260,6 +274,8 @@ pam_start (const char *service_name, const char *user, const struct pam_conv *co
     handle->tty = NULL;
     handle->conversation.conv = conversation->conv;
     handle->conversation.appdata_ptr = conversation->appdata_ptr;
+    handle->envlist = malloc (sizeof (char *) * 1);
+    handle->envlist[0] = NULL;
 
     return PAM_SUCCESS;
 }
@@ -303,11 +319,15 @@ pam_authenticate (pam_handle_t *pamh, int flags)
         free (resp);
     }
 
+    /* Crash on authenticate */
+    if (strcmp (pamh->user, "crash-authenticate") == 0)
+        kill (getpid (), SIGSEGV);
+
     /* Look up password database */
     entry = getpwnam (pamh->user);
 
     /* Prompt for password if required */
-    if (entry && (strcmp (pamh->service_name, "lightdm-autologin") == 0 || strcmp (entry->pw_passwd, "") == 0))
+    if (entry && strcmp (pamh->user, "always-password") != 0 && (strcmp (pamh->service_name, "lightdm-autologin") == 0 || strcmp (entry->pw_passwd, "") == 0))
         password_matches = TRUE;
     else
     {
@@ -339,19 +359,19 @@ pam_authenticate (pam_handle_t *pamh, int flags)
         free (resp);
     }
 
-    /* Special user 'dave' has his home directory created on login */
-    if (password_matches && strcmp (pamh->user, "dave") == 0)
+    /* Special user has home directory created on login */
+    if (password_matches && strcmp (pamh->user, "mount-home-dir") == 0)
         g_mkdir_with_parents (entry->pw_dir, 0755);
 
-    /* Special user 'user0' changes user on authentication */
-    if (password_matches && strcmp (pamh->user, "user0") == 0)
+    /* Special user 'change-user1' changes user on authentication */
+    if (password_matches && strcmp (pamh->user, "change-user1") == 0)
     {
         g_free (pamh->user);
-        pamh->user = g_strdup ("user1");
+        pamh->user = g_strdup ("change-user2");
     }
 
-    /* Special user 'rename-user-invalid' changes to an invalid user on authentication */
-    if (password_matches && strcmp (pamh->user, "rename-user-invalid") == 0)
+    /* Special user 'change-user-invalid' changes to an invalid user on authentication */
+    if (password_matches && strcmp (pamh->user, "change-user-invalid") == 0)
     {
         g_free (pamh->user);
         pamh->user = g_strdup ("invalid-user");
@@ -363,14 +383,62 @@ pam_authenticate (pam_handle_t *pamh, int flags)
         return PAM_AUTH_ERR;
 }
 
+static const char *
+get_env_value (const char *name_value, const char *name)
+{
+    int j;
+
+    for (j = 0; name[j] && name[j] != '=' && name[j] == name_value[j]; j++);
+    if (name_value[j] == '=')
+        return &name_value[j + 1];
+
+    return NULL;
+}
+
+int
+pam_putenv (pam_handle_t *pamh, const char *name_value)
+{
+    int i;
+
+    if (pamh == NULL || name_value == NULL)
+        return PAM_SYSTEM_ERR;
+
+    for (i = 0; pamh->envlist[i]; i++)
+    {
+        if (get_env_value (pamh->envlist[i], name_value))
+            break;
+    }
+
+    if (pamh->envlist[i])
+    {
+        free (pamh->envlist[i]);
+        pamh->envlist[i] = strdup (name_value);
+    }
+    else
+    {
+        pamh->envlist = realloc (pamh->envlist, sizeof (char *) * (i + 2));
+        pamh->envlist[i] = strdup (name_value);
+        pamh->envlist[i + 1] = NULL;
+    }
+
+    return PAM_SUCCESS;
+}
+
 const char *
 pam_getenv (pam_handle_t *pamh, const char *name)
 {
+    int i;
+
     if (pamh == NULL || name == NULL)
         return NULL;
 
-    if (strcmp (name, "PATH") == 0)
-        return getenv ("PATH");
+    for (i = 0; pamh->envlist[i]; i++)
+    {
+        const char *value;
+        value = get_env_value (pamh->envlist[i], name);
+        if (value)
+            return value;
+    }
 
     return NULL;
 }
@@ -378,16 +446,10 @@ pam_getenv (pam_handle_t *pamh, const char *name)
 char **
 pam_getenvlist (pam_handle_t *pamh)
 {
-    char **envlist;
-
     if (pamh == NULL)
         return NULL;
 
-    envlist = malloc (sizeof (char *) * 2);
-    envlist[0] = g_strdup_printf ("PATH=%s", getenv ("PATH"));
-    envlist[1] = NULL;
-
-    return envlist;
+    return pamh->envlist;
 }
 
 int
@@ -465,6 +527,16 @@ pam_acct_mgmt (pam_handle_t *pamh, int flags)
 {
     if (pamh == NULL)
         return PAM_SYSTEM_ERR;
+  
+    if (!pamh->user)
+        return PAM_USER_UNKNOWN;
+
+    if (strcmp (pamh->user, "denied") == 0)
+        return PAM_PERM_DENIED;
+    if (strcmp (pamh->user, "expired") == 0)
+        return PAM_ACCT_EXPIRED;
+    if (strcmp (pamh->user, "new-authtok") == 0)
+        return PAM_NEW_AUTHTOK_REQD;
 
     return PAM_SUCCESS;
 }
@@ -472,8 +544,37 @@ pam_acct_mgmt (pam_handle_t *pamh, int flags)
 int
 pam_chauthtok (pam_handle_t *pamh, int flags)
 {
+    struct passwd *entry;
+    int result;
+    struct pam_message **msg;
+    struct pam_response *resp = NULL;
+
     if (pamh == NULL)
         return PAM_SYSTEM_ERR;
+
+    msg = malloc (sizeof (struct pam_message *) * 1);
+    msg[0] = malloc (sizeof (struct pam_message));
+    msg[0]->msg_style = PAM_PROMPT_ECHO_OFF;
+    msg[0]->msg = "Enter new password:";
+    result = pamh->conversation.conv (1, (const struct pam_message **) msg, &resp, pamh->conversation.appdata_ptr);
+    free (msg[0]);
+    free (msg);
+    if (result != PAM_SUCCESS)
+        return result;
+
+    if (resp == NULL)
+        return PAM_CONV_ERR;
+    if (resp[0].resp == NULL)
+    {
+        free (resp);
+        return PAM_CONV_ERR;
+    }
+
+    /* Update password database */
+    entry = getpwnam (pamh->user);
+    free (entry->pw_passwd);
+    entry->pw_passwd = resp[0].resp;
+    free (resp);
 
     return PAM_SUCCESS;
 }
@@ -481,8 +582,15 @@ pam_chauthtok (pam_handle_t *pamh, int flags)
 int
 pam_setcred (pam_handle_t *pamh, int flags)
 {
+    gchar *e;
+
     if (pamh == NULL)
         return PAM_SYSTEM_ERR;
+
+    /* Put the test directories into the path */
+    e = g_strdup_printf ("PATH=%s/tests/src/.libs:%s/tests/src:%s/tests/src:%s/src:%s", BUILDDIR, BUILDDIR, SRCDIR, BUILDDIR, pam_getenv (pamh, "PATH"));
+    pam_putenv (pamh, e);
+    g_free (e);
 
     return PAM_SUCCESS;
 }

@@ -72,6 +72,28 @@ static const GDBusInterfaceVTable user_vtable =
     handle_user_call,
     handle_user_get_property,
 };
+static GDBusConnection *ck_connection = NULL;
+static GDBusNodeInfo *ck_session_info;
+typedef struct
+{
+    gchar *cookie;
+    gchar *path;
+    guint id;
+} CKSession;
+static GList *ck_sessions = NULL;
+static gint ck_session_index = 0;
+static void handle_ck_session_call (GDBusConnection       *connection,
+                                    const gchar           *sender,
+                                    const gchar           *object_path,
+                                    const gchar           *interface_name,
+                                    const gchar           *method_name,
+                                    GVariant              *parameters,
+                                    GDBusMethodInvocation *invocation,
+                                    gpointer               user_data);
+static const GDBusInterfaceVTable ck_session_vtable =
+{
+    handle_ck_session_call,
+};
 typedef struct
 {
     GSocket *socket;
@@ -486,6 +508,7 @@ static void
 check_status (const gchar *status)
 {
     const gchar *pattern;
+    gboolean result = FALSE;
 
     if (stop)
         return;
@@ -497,7 +520,14 @@ check_status (const gchar *status)
 
     /* Try and match against expected */
     pattern = get_script_line ();
-    if (!pattern || !g_regex_match_simple (pattern, status, 0, 0))
+    if (pattern)
+    {
+        gchar *full_pattern = g_strdup_printf ("^%s$", pattern);
+        result = g_regex_match_simple (full_pattern, status, 0, 0);
+        g_free (full_pattern);
+    }
+  
+    if (!result)
     {
         fail (NULL, pattern);
         return;
@@ -593,6 +623,48 @@ load_script (const gchar *filename)
     g_strfreev (lines);
 }
 
+static CKSession *
+open_ck_session (GVariant *params)
+{
+    CKSession *session;
+    GString *cookie;
+    GVariantIter *iter;
+    const gchar *name;
+    GVariant *value;
+    GError *error = NULL;
+
+    session = g_malloc0 (sizeof (CKSession));
+    ck_sessions = g_list_append (ck_sessions, session);
+
+    cookie = g_string_new ("ck-cookie");
+    g_variant_get (params, "a(sv)", &iter);
+    while (g_variant_iter_loop (iter, "(&sv)", &name, &value))
+    {
+        if (strcmp (name, "x11-display") == 0)
+        {
+            const gchar *display;
+            g_variant_get (value, "&s", &display);
+            g_string_append_printf (cookie, "-x%s", display);
+        }
+    }
+
+    session->cookie = cookie->str;
+    g_string_free (cookie, FALSE);
+    session->path = g_strdup_printf ("/org/freedesktop/ConsoleKit/Session%d", ck_session_index++);
+    session->id = g_dbus_connection_register_object (ck_connection,
+                                                     session->path,
+                                                     ck_session_info->interfaces[0],
+                                                     &ck_session_vtable,
+                                                     session,
+                                                     NULL,
+                                                     &error);
+    if (error)
+        g_warning ("Failed to register CK Session: %s", error->message);
+    g_clear_error (&error);
+
+    return session;
+}
+
 static void
 handle_ck_call (GDBusConnection       *connection,
                 const gchar           *sender,
@@ -604,33 +676,66 @@ handle_ck_call (GDBusConnection       *connection,
                 gpointer               user_data)
 {
     if (strcmp (method_name, "CanRestart") == 0)
-    {
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("(b)", TRUE));
-    }
     else if (strcmp (method_name, "CanStop") == 0)
-    {
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("(b)", TRUE));
-    }
     else if (strcmp (method_name, "CloseSession") == 0)
-    {
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("(b)", TRUE));
-    }
     else if (strcmp (method_name, "OpenSession") == 0)
     {
-        g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", "deadbeef"));      
+        GVariantBuilder params;
+        g_variant_builder_init (&params, G_VARIANT_TYPE ("a(sv)"));
+        CKSession *session = open_ck_session (g_variant_builder_end (&params));
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", session->cookie));
     }
     else if (strcmp (method_name, "OpenSessionWithParameters") == 0)
     {
-        g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", "deadbeef"));      
+        CKSession *session = open_ck_session (g_variant_get_child_value (parameters, 0));
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", session->cookie));
+    }
+    else if (strcmp (method_name, "GetSessionForCookie") == 0)
+    {
+        GList *link;
+        gchar *cookie;
+
+        g_variant_get (parameters, "(&s)", &cookie);
+
+        for (link = ck_sessions; link; link = link->next)
+        {
+            CKSession *session = link->data;
+            if (strcmp (session->cookie, cookie) != 0)
+            {
+                g_dbus_method_invocation_return_value (invocation, g_variant_new ("(o)", session->path));
+                return;
+            }
+        }
+
+        g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "Unable to find session for cookie");
     }
     else if (strcmp (method_name, "Restart") == 0)
-    {
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
-    }
     else if (strcmp (method_name, "Stop") == 0)
-    {
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
-    }
+    else
+        g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
+}
+
+static void
+handle_ck_session_call (GDBusConnection       *connection,
+                        const gchar           *sender,
+                        const gchar           *object_path,
+                        const gchar           *interface_name,
+                        const gchar           *method_name,
+                        GVariant              *parameters,
+                        GDBusMethodInvocation *invocation,
+                        gpointer               user_data)
+{
+    if (strcmp (method_name, "Lock") == 0)
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    else if (strcmp (method_name, "Unlock") == 0)
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    else
+        g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
 }
 
 static void
@@ -658,6 +763,10 @@ ck_name_acquired_cb (GDBusConnection *connection,
         "      <arg name='parameters' direction='in' type='a(sv)'/>"
         "      <arg name='cookie' direction='out' type='s'/>"
         "    </method>"
+        "    <method name='GetSessionForCookie'>"
+        "      <arg name='cookie' direction='in' type='s'/>"
+        "      <arg name='ssid' direction='out' type='o'/>"
+        "    </method>"
         "    <method name='Restart'/>"
         "    <method name='Stop'/>"
         "    <signal name='SeatAdded'>"
@@ -672,14 +781,29 @@ ck_name_acquired_cb (GDBusConnection *connection,
     {
         handle_ck_call,
     };
+    const gchar *ck_session_interface =
+        "<node>"
+        "  <interface name='org.freedesktop.ConsoleKit.Session'>"
+        "    <method name='Lock'/>"
+        "    <method name='Unlock'/>"
+        "  </interface>"
+        "</node>";
     GDBusNodeInfo *ck_info;
     GError *error = NULL;
+
+    ck_connection = connection;
 
     ck_info = g_dbus_node_info_new_for_xml (ck_interface, &error);
     if (error)
         g_warning ("Failed to parse D-Bus interface: %s", error->message);  
     g_clear_error (&error);
     if (!ck_info)
+        return;
+    ck_session_info = g_dbus_node_info_new_for_xml (ck_session_interface, &error);
+    if (error)
+        g_warning ("Failed to parse D-Bus interface: %s", error->message);  
+    g_clear_error (&error);
+    if (!ck_session_info)
         return;
     g_dbus_connection_register_object (connection,
                                        "/org/freedesktop/ConsoleKit/Manager",
@@ -898,9 +1022,15 @@ handle_user_get_property (GDBusConnection       *connection,
         return g_variant_new_string (user->language ? user->language : "");
     else if (strcmp (property_name, "XSession") == 0)
         return g_variant_new_string (user->xsession ? user->xsession : "");
-    else if (strcmp (property_name, "XKeyboardLayouts") == 0 &&
-             user->layouts != NULL && user->layouts[0] != NULL)
-        return g_variant_new_strv ((const gchar * const *) user->layouts, -1);
+    else if (strcmp (property_name, "XKeyboardLayouts") == 0)
+    {
+        if (user->layouts != NULL)
+            return g_variant_new_strv ((const gchar * const *) user->layouts, -1);
+        else
+            return g_variant_new_strv (NULL, 0);
+    }
+    else if (strcmp (property_name, "XHasMessages") == 0)
+        return g_variant_new_boolean (FALSE);
 
     return NULL;
 }
@@ -939,6 +1069,7 @@ accounts_name_acquired_cb (GDBusConnection *connection,
         "    <property name='Language' type='s' access='read'/>"
         "    <property name='XSession' type='s' access='read'/>"
         "    <property name='XKeyboardLayouts' type='as' access='read'/>"
+        "    <property name='XHasMessages' type='b' access='read'/>"
         "  </interface>"
         "</node>";
     GError *error = NULL;
@@ -1000,7 +1131,7 @@ run_lightdm ()
 
     status_timeout = g_timeout_add (STATUS_TIMEOUT, status_timeout_cb, NULL);
 
-    command_line = g_string_new ("../src/lightdm");
+    command_line = g_string_new ("lightdm");
     if (getenv ("DEBUG"))
         g_string_append (command_line, " --debug");
     if (!g_key_file_has_key (config, "test-runner-config", "have-config", NULL) ||
@@ -1024,7 +1155,7 @@ run_lightdm ()
     }
     g_clear_error (&error);
 
-    if (!g_spawn_async (NULL, lightdm_argv, NULL, G_SPAWN_DO_NOT_REAP_CHILD, NULL, NULL, &lightdm_pid, &error))
+    if (!g_spawn_async (NULL, lightdm_argv, NULL, G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH, NULL, NULL, &lightdm_pid, &error))
     {
         g_warning ("Error launching LightDM: %s", error->message);
         quit (EXIT_FAILURE);
@@ -1095,7 +1226,7 @@ main (int argc, char **argv)
     g_free (ld_preload);
 
     /* Run test programs */
-    path = g_strdup_printf ("%s/tests/src/.libs:%s/tests/src:%s/tests/src:%s", BUILDDIR, BUILDDIR, SRCDIR, g_getenv ("PATH"));
+    path = g_strdup_printf ("%s/tests/src/.libs:%s/tests/src:%s/tests/src:%s/src:%s", BUILDDIR, BUILDDIR, SRCDIR, BUILDDIR, g_getenv ("PATH"));
     g_setenv ("PATH", path, TRUE);
     g_free (path);
 
@@ -1196,18 +1327,46 @@ main (int argc, char **argv)
         gint uid;
     } users[] =
     {
-        {"root",    "",         TRUE,  "root",       NULL,          NULL, NULL,          NULL,             0},
-        {"lightdm", "",         TRUE,  "",           NULL,          NULL, NULL,          NULL,           100},
-        {"alice",   "password", TRUE,  "Alice User", NULL,          NULL, NULL,          NULL,          1000},
-        {"bob",     "",         TRUE,  "Bob User",   NULL,          "us", NULL,          "en_AU.utf8",  1001},
-        {"carol",   "",         TRUE,  "Carol User", "alternative", "ru", "fr\toss;ru;", "fr_FR.UTF-8", 1002},
-        {"dave",    "",         FALSE, "Dave User",  NULL,          NULL, NULL,          NULL,          1003},
-        /* user0 is switched to user1 when authentication succeeds */
-        {"user0",   "",         TRUE,  "User 0",     NULL,          NULL, NULL,          NULL,          1004},
-        {"user1",   "",         TRUE,  "User 1",     NULL,          NULL, NULL,          NULL,          1005},
-        /* rename-user-invalid switches to invalid-user when authentication succeeds */
-        {"rename-user-invalid",   "",         TRUE,  "User 1",     NULL,          NULL, NULL,          NULL,          1006},
-        {NULL,      NULL,       FALSE, NULL,         NULL,          NULL, NULL,          NULL,             0}
+        /* Root account */
+        {"root",             "",         TRUE,  "root",               NULL,  NULL, NULL,          NULL,             0},
+        /* Unprivileged account for greeters */
+        {"lightdm",          "",         TRUE,  "",                   NULL,  NULL, NULL,          NULL,           100},
+        /* These accounts have a password */
+        {"have-password1",   "password", TRUE,  "Password User 1",    NULL,  NULL, NULL,          NULL,          1000},
+        {"have-password2",   "password", TRUE,  "Password User 2",    NULL,  NULL, NULL,          NULL,          1001},
+        {"have-password3",   "password", TRUE,  "Password User 3",    NULL,  NULL, NULL,          NULL,          1002},
+        {"have-password4",   "password", TRUE,  "Password User 4",    NULL,  NULL, NULL,          NULL,          1003},
+        /* This account always prompts for a password, even if using the lightdm-autologin service */
+        {"always-password",  "password", TRUE,  "Password User 4",    NULL,  NULL, NULL,          NULL,          1004},
+        /* These accounts have no password */
+        {"no-password1",     "",         TRUE,  "No Password User 1", NULL,  NULL, NULL,          NULL,          1005},
+        {"no-password2",     "",         TRUE,  "No Password User 2", NULL,  NULL, NULL,          NULL,          1006},
+        {"no-password3",     "",         TRUE,  "No Password User 3", NULL,  NULL, NULL,          NULL,          1007},
+        {"no-password4",     "",         TRUE,  "No Password User 4", NULL,  NULL, NULL,          NULL,          1008},
+        /* This account has a keyboard layout */
+        {"have-layout",      "",         TRUE,  "Layout User",        NULL,  "us", NULL,          NULL,          1009},
+        /* This account has a set of keyboard layouts */
+        {"have-layouts",     "",         TRUE,  "Layouts User",       NULL,  "ru", "fr\toss;ru;", NULL,          1010},
+        /* This account has a language set */
+        {"have-language",    "",         TRUE,  "Language User",      NULL,  NULL, NULL,          "en_AU.utf8",  1011},      
+        /* This account has a preconfigured session */
+        {"have-session",            "",  TRUE,  "Session User", "alternative", NULL, NULL,        NULL,          1012},
+        /* This account has the home directory mounted on login */
+        {"mount-home-dir",   "",         FALSE, "Mounted Home Dir User", NULL, NULL, NULL,        NULL,          1013},
+        /* This account is denied access */
+        {"denied",           "",         TRUE,  "Denied User",        NULL,  NULL, NULL,          NULL,          1014},
+        /* This account has expired */
+        {"expired",          "",         TRUE,  "Expired User",       NULL,  NULL, NULL,          NULL,          1015},
+        /* This account needs a password change */
+        {"new-authtok",      "",         TRUE,  "New Token User",     NULL,  NULL, NULL,          NULL,          1016},
+        /* This account is switched to change-user2 when authentication succeeds */
+        {"change-user1",     "",         TRUE,  "Change User 1",      NULL,  NULL, NULL,          NULL,          1017},
+        {"change-user2",     "",         TRUE,  "Change User 2",      NULL,  NULL, NULL,          NULL,          1018},
+        /* This account switches to invalid-user when authentication succeeds */
+        {"change-user-invalid", "",      TRUE,  "Invalid Change User",NULL,  NULL, NULL,          NULL,          1019},
+        /* This account crashes on authentication */
+        {"crash-authenticate", "",       TRUE,  "Crash Auth User",    NULL,  NULL, NULL,          NULL,          1020},
+        {NULL,               NULL,       FALSE, NULL,                 NULL,  NULL, NULL,          NULL,             0}
     };
     passwd_data = g_string_new ("");
     int i;

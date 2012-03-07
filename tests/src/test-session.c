@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <xcb/xcb.h>
 #include <glib.h>
 #include <glib-object.h>
@@ -11,7 +12,11 @@
 
 #include "status.h"
 
+static GString *open_fds;
+
 static GKeyFile *config;
+
+static xcb_connection_t *connection;
 
 static void
 quit_cb (int signum)
@@ -70,13 +75,61 @@ request_cb (const gchar *request)
         status_notify ("SESSION %s LOCK-SESSION", getenv ("DISPLAY"));
     }
     g_free (r);
+
+    r = g_strdup_printf ("SESSION %s READ-ENV NAME=", getenv ("DISPLAY"));
+    if (g_str_has_prefix (request, r))
+    {
+        const gchar *name = request + strlen (r);
+        const gchar *value = g_getenv (name);
+        status_notify ("SESSION %s READ-ENV NAME=%s VALUE=%s", getenv ("DISPLAY"), name, value ? value : "");
+    }
+    g_free (r);
+
+    r = g_strdup_printf ("SESSION %s WRITE-STDOUT TEXT=", getenv ("DISPLAY"));
+    if (g_str_has_prefix (request, r))
+        g_print ("%s\n", request + strlen (r));
+    g_free (r);
+
+    r = g_strdup_printf ("SESSION %s WRITE-STDERR TEXT=", getenv ("DISPLAY"));
+    if (g_str_has_prefix (request, r))
+        g_printerr ("%s\n", request + strlen (r));
+    g_free (r);
+
+    r = g_strdup_printf ("SESSION %s READ-XSESSION-ERRORS", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+    {
+        gchar *contents;
+        GError *error = NULL;
+
+        if (g_file_get_contents (".xsession-errors", &contents, NULL, &error))
+            status_notify ("SESSION %s READ-XSESSION-ERRORS TEXT=%s", getenv ("DISPLAY"), contents);
+        else
+            status_notify ("SESSION %s READ-XSESSION-ERRORS ERROR=%s", getenv ("DISPLAY"), error->message);
+        g_clear_error (&error);
+    }
+    g_free (r);
+
+    r = g_strdup_printf ("SESSION %s LIST-UNKNOWN-FILE-DESCRIPTORS", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+        status_notify ("SESSION %s LIST-UNKNOWN-FILE-DESCRIPTORS FDS=%s", getenv ("DISPLAY"), open_fds->str);
+    g_free (r);
 }
 
 int
 main (int argc, char **argv)
 {
     GMainLoop *loop;
-    xcb_connection_t *connection;
+    int fd, open_max;
+
+    open_fds = g_string_new ("");
+    open_max = sysconf (_SC_OPEN_MAX);
+    for (fd = STDERR_FILENO + 1; fd < open_max; fd++)
+    {
+        if (fcntl (fd, F_GETFD) >= 0)
+            g_string_append_printf (open_fds, "%d,", fd);
+    }
+    if (g_str_has_suffix (open_fds->str, ","))
+        open_fds->str[strlen (open_fds->str) - 1] = '\0';
 
     signal (SIGINT, quit_cb);
     signal (SIGTERM, quit_cb);

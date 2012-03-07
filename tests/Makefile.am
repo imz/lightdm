@@ -10,13 +10,22 @@ TESTS = \
 	test-autologin \
 	test-autologin-invalid-user \
 	test-autologin-invalid-session \
+	test-autologin-crash-authenticate \
 	test-autologin-xserver-crash \
 	test-autologin-session-crash \
+	test-autologin-password \
+	test-autologin-new-authtok \
+	test-autologin-denied \
+	test-autologin-expired \
 	test-autologin-logout \
 	test-autologin-previous-session \
 	test-autologin-guest \
 	test-autologin-guest-fail-setup-script \
 	test-autologin-guest-logout \
+	test-session-stdout \
+	test-session-stderr \
+	test-xauthority \
+	test-system-xauthority \
 	test-user-renamed \
 	test-user-renamed-invalid \
 	test-keyboard-layout \
@@ -26,10 +35,12 @@ TESTS = \
 	test-language \
 	test-no-language \
 	test-language-no-accounts-service \
+	test-login-crash-authenticate \
 	test-login-gobject \
 	test-login-gobject-manual \
 	test-login-gobject-manual-previous-session \
 	test-login-gobject-no-password \
+	test-login-gobject-new-authtok \
 	test-login-gobject-pick-session \
 	test-login-gobject-previous-session \
 	test-login-gobject-wrong-password \
@@ -45,6 +56,7 @@ TESTS = \
 	test-login-python-manual \
 	test-login-python-manual-previous-session \
 	test-login-python-no-password \
+	test-login-python-new-authtok \
 	test-login-python-previous-session \
 	test-login-python-wrong-password \
 	test-login-python-invalid-user \
@@ -78,7 +90,10 @@ TESTS = \
 	test-vnc-login \
 	test-xdmcp-login \
 	test-no-accounts-service \
-	test-no-console-kit
+	test-console-kit \
+	test-no-console-kit \
+	test-open-file-descriptors \
+	test-xdmcp-open-file-descriptors
 
 #	test-session-exit-error
 #	test-greeter-no-exit
@@ -92,6 +107,7 @@ TESTS += \
 	test-login-qt-manual \
 	test-login-qt-manual-previous-session \
 	test-login-qt-no-password \
+	test-login-qt-new-authtok \
 	test-login-qt-previous-session \
 	test-login-qt-wrong-password \
 	test-login-qt-invalid-user \
@@ -115,15 +131,21 @@ EXTRA_DIST = \
 	data/xsessions/alternative.desktop \
 	data/xsessions/default.desktop \
 	scripts/autologin.conf \
+	scripts/autologin-crash-authenticate.conf \
+	scripts/autologin-denied.conf \
+	scripts/autologin-expired.conf \
 	scripts/autologin-guest.conf \
 	scripts/autologin-guest-fail-setup-script.conf \
 	scripts/autologin-guest-logout.conf \
 	scripts/autologin-invalid-session.conf \
 	scripts/autologin-invalid-user.conf \
 	scripts/autologin-logout.conf \
+	scripts/autologin-new-authtok.conf \
+	scripts/autologin-password.conf \
 	scripts/autologin-previous-session.conf \
 	scripts/autologin-session-crash.conf \
 	scripts/autologin-xserver-crash.conf \
+	scripts/console-kit.conf \
 	scripts/greeter-fail-start.conf \
 	scripts/greeter-not-installed.conf \
 	scripts/greeter-xserver-crash.conf \
@@ -135,6 +157,7 @@ EXTRA_DIST = \
 	scripts/lock-seat.conf \
 	scripts/lock-session.conf \
 	scripts/login.conf \
+	scripts/login-crash-authenticate.conf \
 	scripts/login-guest.conf \
 	scripts/login-guest-disabled.conf \
 	scripts/login-guest-fail-setup-script.conf \
@@ -145,6 +168,7 @@ EXTRA_DIST = \
 	scripts/login-logout.conf \
 	scripts/login-manual.conf \
 	scripts/login-manual-previous-session.conf \
+	scripts/login-new-authtok.conf \
 	scripts/login-no-password.conf \
 	scripts/login-pick-session.conf \
 	scripts/login-previous-session.conf \
@@ -163,6 +187,8 @@ EXTRA_DIST = \
 	scripts/script-hook-fail-display-setup.conf \
 	scripts/script-hook-fail-greeter-setup.conf \
 	scripts/script-hook-fail-session-setup.conf \
+	scripts/session-stdout.conf \
+	scripts/session-stderr.conf \
 	scripts/switch-to-greeter.conf \
 	scripts/switch-to-guest.conf \
 	scripts/switch-to-user.conf \
@@ -170,8 +196,10 @@ EXTRA_DIST = \
 	scripts/switch-to-user-existing-session.conf \
 	scripts/switch-to-user-logout.conf \
 	scripts/switch-to-user-no-password.conf \
+	scripts/system-xauthority.conf \
 	scripts/user-renamed.conf \
 	scripts/user-renamed-invalid.conf \
 	scripts/vnc-login.conf \
+	scripts/xauthority.conf \
 	scripts/xdmcp-login.conf \
 	scripts/xserver-fail-start.conf
