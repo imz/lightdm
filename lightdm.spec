@@ -20,7 +20,7 @@ Source4: %name.wms
 
 Patch1: %name-%version-%release.patch
 
-Requires: %name-greeter
+# Requires: %name-greeter
 Requires: accountsservice
 
 BuildRequires: gcc-c++ intltool gnome-common
