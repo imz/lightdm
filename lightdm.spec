@@ -121,6 +121,7 @@ This package provides a Qt-based LightDM greeter engine.
 %configure \
 	%{subst_enable introspection} \
 	--disable-static \
+	--disable-tests \
 	--enable-gtk-doc \
 %if_enabled gobject
 	--enable-liblightdm-gobject \
