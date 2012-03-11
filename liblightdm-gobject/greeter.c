@@ -21,6 +21,7 @@ enum {
     PROP_0,
     PROP_DEFAULT_SESSION_HINT,
     PROP_HIDE_USERS_HINT,
+    PROP_SHOW_MANUAL_LOGIN_HINT,
     PROP_LOCK_HINT,
     PROP_HAS_GUEST_ACCOUNT_HINT,
     PROP_SELECT_USER_HINT,
@@ -546,7 +547,13 @@ lightdm_greeter_get_default_session_hint (LightDMGreeter *greeter)
  * lightdm_greeter_get_hide_users_hint:
  * @greeter: A #LightDMGreeter
  *
- * Check if user accounts should be shown.
+ * Check if user accounts should be shown.  If this is TRUE then the list of
+ * accounts should be taken from #LightDMUserList and displayed in the greeter
+ * for the user to choose from.  Note that this list can be empty and it is
+ * recommended you show a method for the user to enter a username manually.
+ * 
+ * If this option is shown the greeter should only allow these users to be
+ * chosen for login unless the manual login hint is set.
  *
  * Return value: #TRUE if the available users should not be shown.
  */
@@ -557,6 +564,28 @@ lightdm_greeter_get_hide_users_hint (LightDMGreeter *greeter)
 
     g_return_val_if_fail (LIGHTDM_IS_GREETER (greeter), FALSE);
     value = lightdm_greeter_get_hint (greeter, "hide-users");
+
+    return g_strcmp0 (value, "true") == 0;
+}
+
+/**
+ * lightdm_greeter_get_show_manual_login_hint:
+ * @greeter: A #LightDMGreeter
+ *
+ * Check if a manual login option should be shown.  If set the GUI
+ * should provide a way for a username to be entered manually.
+ * Without this hint a greeter which is showing a user list can
+ * limit logins to only those users.
+ *
+ * Return value: #TRUE if a manual login option should be shown.
+ */
+gboolean
+lightdm_greeter_get_show_manual_login_hint (LightDMGreeter *greeter)
+{
+    const gchar *value;
+
+    g_return_val_if_fail (LIGHTDM_IS_GREETER (greeter), FALSE);
+    value = lightdm_greeter_get_hint (greeter, "show-manual-login");
 
     return g_strcmp0 (value, "true") == 0;
 }
@@ -990,6 +1019,9 @@ lightdm_greeter_get_property (GObject    *object,
     case PROP_HIDE_USERS_HINT:
         g_value_set_boolean (value, lightdm_greeter_get_hide_users_hint (self));
         break;
+    case PROP_SHOW_MANUAL_LOGIN_HINT:
+        g_value_set_boolean (value, lightdm_greeter_get_show_manual_login_hint (self));
+        break;
     case PROP_LOCK_HINT:
         g_value_set_boolean (value, lightdm_greeter_get_lock_hint (self));
         break;
@@ -1102,6 +1134,14 @@ lightdm_greeter_class_init (LightDMGreeterClass *klass)
                                      g_param_spec_boolean ("hide-users-hint",
                                                            "hide-users-hint",
                                                            "Hide users hint",
+                                                           FALSE,
+                                                           G_PARAM_READABLE));
+
+    g_object_class_install_property (object_class,
+                                     PROP_SHOW_MANUAL_LOGIN_HINT,
+                                     g_param_spec_boolean ("show-manual-login-hint",
+                                                           "show-manual-login-hint",
+                                                           "Show manual login hint",
                                                            FALSE,
                                                            G_PARAM_READABLE));
 
