@@ -5,7 +5,7 @@
 %def_enable qt
 
 Name: lightdm
-Version: 1.1.6
+Version: 1.1.7
 Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
@@ -205,6 +205,9 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Sun Mar 11 2012 Alexey Shabalin <shaba@altlinux.ru> 1.1.7-alt1
+- 1.1.7
+
 * Wed Mar 07 2012 Alexey Shabalin <shaba@altlinux.ru> 1.1.6-alt1
 - 1.1.6
 
