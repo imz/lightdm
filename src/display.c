@@ -633,6 +633,8 @@ greeter_session_stopped_cb (Session *session, Display *display)
     }
 }
 
+static void prepend_argv (gchar ***argv, const gchar *value);
+
 static gboolean
 display_start_greeter (Display *display)
 {
@@ -659,6 +661,8 @@ display_start_greeter (Display *display)
     g_free (path);
     if (!argv)
         return TRUE;
+
+    prepend_argv (&argv, "/usr/libexec/lightdm/lightdm-greeter-session");
 
     session_run (display->priv->session, argv);
 
