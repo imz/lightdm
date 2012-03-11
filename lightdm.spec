@@ -17,6 +17,7 @@ Source: %name-%version.tar
 Source2: %name.pam
 Source3: %name-autologin.pam
 Source4: %name.wms
+Source5: %name-greeter-session.sh
 
 Patch1: %name-%version-%release.patch
 
@@ -151,6 +152,9 @@ install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 # install external hook for update_wms
 install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
+# install script to launch dbus
+install -m755 %SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
+
 %find_lang %name
 
 %pre
@@ -207,6 +211,8 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 %changelog
 * Sun Mar 11 2012 Alexey Shabalin <shaba@altlinux.ru> 1.1.7-alt1
 - 1.1.7
+- Add patch and wrapper script to launch dbus for the greeter so that
+  we can safely kill it when the greeter ends. (import from ubuntu)
 
 * Wed Mar 07 2012 Alexey Shabalin <shaba@altlinux.ru> 1.1.6-alt1
 - 1.1.6
