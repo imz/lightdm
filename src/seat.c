@@ -262,7 +262,10 @@ run_script (Seat *seat, Display *display, const gchar *script_name, User *user)
         process_set_env (script, "PATH", g_getenv ("PATH"));
     }
     else
-        process_set_env (script, "PATH", "/usr/local/bin:/usr/bin:/bin");
+        if (user_get_uid (user) == 0)
+          process_set_env (script, "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        else
+          process_set_env (script, "PATH", "/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games");
 
     if (user)
     {
