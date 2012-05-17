@@ -5,7 +5,7 @@
 %def_enable qt
 
 Name: lightdm
-Version: 1.1.7
+Version: 1.2.2
 Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
@@ -209,6 +209,9 @@ install -m755 %SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Thu May 17 2012 Alexey Shabalin <shaba@altlinux.ru> 1.2.2-alt1
+- 1.2.2
+
 * Sun Mar 11 2012 Alexey Shabalin <shaba@altlinux.ru> 1.1.7-alt1
 - 1.1.7
 - Add patch and wrapper script to launch dbus for the greeter so that
