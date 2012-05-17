@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
@@ -26,6 +27,7 @@ static int to_daemon_input = 0;
 
 static gboolean is_interactive;
 static gboolean do_authenticate;
+static gboolean authentication_complete = FALSE;
 static pam_handle_t *pam_handle;
 
 /* Maximum length of a string to pass between daemon and session */
@@ -89,7 +91,12 @@ pam_conv_cb (int msg_length, const struct pam_message **msg, struct pam_response
 {
     int i, error;
     gboolean auth_complete = FALSE;
+    struct pam_response *response;
     gchar *username = NULL;
+
+    /* FIXME: We don't support communication after pam_authenticate completes */
+    if (authentication_complete)
+        return PAM_SUCCESS;
 
     /* Cancel authentication if requiring input */
     if (!is_interactive)
@@ -102,6 +109,9 @@ pam_conv_cb (int msg_length, const struct pam_message **msg, struct pam_response
                 return PAM_CONV_ERR;
             }
         }
+
+        /* Ignore informational messages */
+        return PAM_SUCCESS;
     }
 
     /* Check if we changed user */
@@ -119,17 +129,18 @@ pam_conv_cb (int msg_length, const struct pam_message **msg, struct pam_response
     }
 
     /* Get response */
-    *resp = calloc (msg_length, sizeof (struct pam_response));
     read_data (&error, sizeof (error));
     if (error != PAM_SUCCESS)
         return error;
+    response = calloc (msg_length, sizeof (struct pam_response));
     for (i = 0; i < msg_length; i++)
     {
-        struct pam_response *r = resp[i];
+        struct pam_response *r = &response[i];
         r->resp = read_string ();
         read_data (&r->resp_retcode, sizeof (r->resp_retcode));
     }
 
+    *resp = response;
     return PAM_SUCCESS;
 }
 
@@ -150,7 +161,7 @@ session_child_run (int argc, char **argv)
     int i, version, fd, result;
     gboolean auth_complete = TRUE;
     User *user = NULL;
-    gchar *log_filename;
+    gchar *log_filename, *log_backup_filename = NULL;
     gsize env_length;
     gsize command_argc;
     gchar **command_argv;
@@ -169,6 +180,7 @@ session_child_run (int argc, char **argv)
     gchar *xauth_filename;
     GDBusConnection *bus;
     gchar *console_kit_cookie;
+    const gchar *path;
     GError *error = NULL;
 
     g_type_init ();
@@ -280,6 +292,7 @@ session_child_run (int argc, char **argv)
     }
     else
         authentication_result = PAM_SUCCESS;
+    authentication_complete = TRUE;
 
     if (authentication_result == PAM_SUCCESS)
     {
@@ -333,6 +346,8 @@ session_child_run (int argc, char **argv)
     command_argv[i] = NULL;
 
     /* Redirect stderr to a log file */
+    if (log_filename)
+        log_backup_filename = g_strdup_printf ("%s.old", log_filename);
     if (!log_filename)
     {
         fd = open ("/dev/null", O_WRONLY);   
@@ -341,15 +356,31 @@ session_child_run (int argc, char **argv)
     }
     else if (g_path_is_absolute (log_filename))
     {
-        fd = open (log_filename, O_WRONLY | O_CREAT, 0600);
+        rename (log_filename, log_backup_filename);
+        fd = open (log_filename, O_WRONLY | O_APPEND | O_CREAT, 0600);
         dup2 (fd, STDERR_FILENO);
         close (fd);
-    }   
+    }
+
+    /* Set group membership - these can be overriden in pam_setcred */
+    if (getuid () == 0)
+    {
+        if (initgroups (username, user_get_gid (user)) < 0)
+        {
+            g_printerr ("Failed to initialize supplementary groups for %s: %s\n", username, strerror (errno));
+            _exit (EXIT_FAILURE);
+        }
+    }
 
     /* Set credentials */
     result = pam_setcred (pam_handle, PAM_ESTABLISH_CRED);
-      
-    /* Open a the session */
+    if (result != PAM_SUCCESS)
+    {
+        g_printerr ("Failed to establish PAM credentials: %s\n", pam_strerror (pam_handle, result));
+        return EXIT_FAILURE;
+    }
+     
+    /* Open the session */
     result = pam_open_session (pam_handle, 0);
     if (result != PAM_SUCCESS)
     {
@@ -422,6 +453,11 @@ session_child_run (int argc, char **argv)
         g_free (value);
     }
 
+    /* Put our tools directory in the path as a hack so we can use the legacy gdmflexiserver interface */
+    path = pam_getenv (pam_handle, "PATH");
+    if (path)
+        pam_putenv (pam_handle, g_strdup_printf ("PATH=%s:%s", PKGLIBEXEC_DIR, path));
+
     /* Catch terminate signal and pass it to the child */
     signal (SIGTERM, signal_cb);
 
@@ -438,12 +474,6 @@ session_child_run (int argc, char **argv)
         /* Change to this user */
         if (getuid () == 0)
         {
-            if (initgroups (username, user_get_gid (user)) < 0)
-            {
-                g_printerr ("Failed to initialize supplementary groups for %s: %s\n", username, strerror (errno));
-                _exit (EXIT_FAILURE);
-            }
-
             if (setgid (user_get_gid (user)) != 0)
             {
                 g_printerr ("Failed to set group ID to %d: %s\n", user_get_gid (user), strerror (errno));
@@ -470,7 +500,8 @@ session_child_run (int argc, char **argv)
         /* Redirect stderr to a log file */
         if (log_filename && !g_path_is_absolute (log_filename))
         {
-            fd = open (log_filename, O_WRONLY | O_CREAT, 0600);
+            rename (log_filename, log_backup_filename);
+            fd = open (log_filename, O_WRONLY | O_APPEND | O_CREAT, 0600);
             dup2 (fd, STDERR_FILENO);
             close (fd);
         }

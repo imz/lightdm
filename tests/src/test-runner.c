@@ -838,10 +838,12 @@ start_console_kit_daemon ()
 static void
 load_passwd_file ()
 {
-    gchar *data, **lines;
+    gchar *path, *data, **lines;
     int i;
 
-    g_file_get_contents (g_getenv ("LIGHTDM_TEST_PASSWD_FILE"), &data, NULL, NULL);
+    path = g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "etc", "passwd", NULL);
+    g_file_get_contents (path, &data, NULL, NULL);
+    g_free (path);
     lines = g_strsplit (data, "\n", -1);
     g_free (data);
 
@@ -1134,18 +1136,12 @@ run_lightdm ()
     command_line = g_string_new ("lightdm");
     if (getenv ("DEBUG"))
         g_string_append (command_line, " --debug");
-    if (!g_key_file_has_key (config, "test-runner-config", "have-config", NULL) ||
-        g_key_file_get_boolean (config, "test-runner-config", "have-config", NULL))
-    {
-        g_string_append_printf (command_line, " --config %s", config_path);
-        g_setenv ("LIGHTDM_TEST_CONFIG", config_path, TRUE);
-    }
     g_string_append_printf (command_line, " --cache-dir %s/cache", temp_dir);
     g_string_append_printf (command_line, " --xsessions-dir=%s/usr/share/xsessions", temp_dir);
     g_string_append_printf (command_line, " --xgreeters-dir=%s/usr/share/xgreeters", temp_dir);
 
-    g_print ("Start daemon with command: PATH=%s LD_PRELOAD=%s LD_LIBRARY_PATH=%s LIGHTDM_TEST_STATUS_SOCKET=%s DBUS_SESSION_BUS_ADDRESS=%s %s\n",
-             g_getenv ("PATH"), g_getenv ("LD_PRELOAD"), g_getenv ("LD_LIBRARY_PATH"), g_getenv ("LIGHTDM_TEST_STATUS_SOCKET"), g_getenv ("DBUS_SESSION_BUS_ADDRESS"),
+    g_print ("Start daemon with command: PATH=%s LD_PRELOAD=%s LD_LIBRARY_PATH=%s LIGHTDM_TEST_ROOT=%s DBUS_SESSION_BUS_ADDRESS=%s %s\n",
+             g_getenv ("PATH"), g_getenv ("LD_PRELOAD"), g_getenv ("LD_LIBRARY_PATH"), g_getenv ("LIGHTDM_TEST_ROOT"), g_getenv ("DBUS_SESSION_BUS_ADDRESS"),
              command_line->str);
 
     if (!g_shell_parse_argv (command_line->str, NULL, &lightdm_argv, &error))
@@ -1179,7 +1175,7 @@ main (int argc, char **argv)
 {
     GMainLoop *loop;
     gchar *greeter = NULL, *script_name, *config_file, *path, *path1, *path2, *ld_preload, *ld_library_path, *home_dir;
-    GString *passwd_data;
+    GString *passwd_data, *group_data;
     GSource *status_source;
     gchar cwd[1024];
     GError *error = NULL;
@@ -1242,9 +1238,18 @@ main (int argc, char **argv)
     g_setenv ("GI_TYPELIB_PATH", path1, TRUE);
     g_free (path1);
 
+    /* Run from a temporary directory */
+    temp_dir = g_build_filename (g_get_tmp_dir (), "lightdm-test-XXXXXX", NULL);
+    if (!mkdtemp (temp_dir))
+    {
+        g_warning ("Error creating temporary directory: %s", strerror (errno));
+        quit (EXIT_FAILURE);
+    }
+    g_chmod (temp_dir, 0755);
+    g_setenv ("LIGHTDM_TEST_ROOT", temp_dir, TRUE);
+
     /* Open socket for status */
-    status_socket_name = g_build_filename (cwd, ".status-socket", NULL);
-    g_setenv ("LIGHTDM_TEST_STATUS_SOCKET", status_socket_name, TRUE);
+    status_socket_name = g_build_filename (temp_dir, ".status-socket", NULL);
     unlink (status_socket_name);
     status_socket = g_socket_new (G_SOCKET_FAMILY_UNIX, G_SOCKET_TYPE_STREAM, G_SOCKET_PROTOCOL_DEFAULT, &error);
     if (error)
@@ -1280,18 +1285,19 @@ main (int argc, char **argv)
     g_source_set_callback (status_source, status_connect_cb, NULL, NULL);
     g_source_attach (status_source, NULL);
 
-    /* Run from a temporary directory */
-    temp_dir = g_build_filename (g_get_tmp_dir (), "lightdm-test-XXXXXX", NULL);
-    if (!mkdtemp (temp_dir))
-    {
-        g_warning ("Error creating temporary directory: %s", strerror (errno));
-        quit (EXIT_FAILURE);
-    }
-    g_chmod (temp_dir, 0755);
-
     /* Set up a skeleton file system */
     g_mkdir_with_parents (g_strdup_printf ("%s/etc", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/usr/share", temp_dir), 0755);
+
+    /* Copy over the configuration */
+    g_mkdir_with_parents (g_strdup_printf ("%s/etc/lightdm", temp_dir), 0755);
+    if (!g_key_file_has_key (config, "test-runner-config", "have-config", NULL) || g_key_file_get_boolean (config, "test-runner-config", "have-config", NULL))
+        if (system (g_strdup_printf ("cp %s %s/etc/lightdm/lightdm.conf", config_path, temp_dir)))
+            perror ("Failed to copy configuration");
+
+    /* Always copy the script */
+    if (system (g_strdup_printf ("cp %s %s/script", config_path, temp_dir)))
+        perror ("Failed to copy configuration");  
 
     /* Copy over the greeter files */
     if (system (g_strdup_printf ("cp -r %s/xsessions %s/usr/share", DATADIR, temp_dir)))
@@ -1311,7 +1317,6 @@ main (int argc, char **argv)
     g_free (greeter);
 
     home_dir = g_build_filename (temp_dir, "home", NULL);
-    g_setenv ("LIGHTDM_TEST_HOME_DIR", home_dir, TRUE);
 
     /* Make fake users */
     struct
@@ -1366,9 +1371,30 @@ main (int argc, char **argv)
         {"change-user-invalid", "",      TRUE,  "Invalid Change User",NULL,  NULL, NULL,          NULL,          1019},
         /* This account crashes on authentication */
         {"crash-authenticate", "",       TRUE,  "Crash Auth User",    NULL,  NULL, NULL,          NULL,          1020},
+        /* This account shows an informational prompt on login */
+        {"info-prompt",      "password", TRUE,  "Info Prompt",        NULL,  NULL, NULL,          NULL,          1021},
+        /* This account shows multiple informational prompts on login */
+        {"multi-info-prompt","password", TRUE,  "Multi Info Prompt",  NULL,  NULL, NULL,          NULL,          1022},
+        /* This account uses two factor authentication */
+        {"two-factor",       "password", TRUE,  "Two Factor",         NULL,  NULL, NULL,          NULL,          1023},
+        /* This account has a special group */
+        {"group-member",     "password", TRUE,  "Group Member",       NULL,  NULL, NULL,          NULL,          1024},
+        /* This account has the home directory created when the session starts */
+        {"make-home-dir",    "",         FALSE, "Make Home Dir User", NULL,  NULL, NULL,          NULL,          1025},
+        /* This account fails to open a session */
+        {"session-error",    "password", TRUE,  "Session Error",      NULL,  NULL, NULL,          NULL,          1026},
+        /* This account can't establish credentials */
+        {"cred-error",       "password", TRUE,  "Cred Error",         NULL,  NULL, NULL,          NULL,          1027},
+        /* This account has expired credentials */
+        {"cred-expired",     "password", TRUE,  "Cred Expired",       NULL,  NULL, NULL,          NULL,          1028},
+        /* This account has cannot access their credentials */
+        {"cred-unavail",     "password", TRUE,  "Cred Unavail",       NULL,  NULL, NULL,          NULL,          1029},
+        /* This account sends informational messages for each PAM function that is called */
+        {"log-pam",          "password", TRUE,  "Log PAM",            NULL,  NULL, NULL,          NULL,          1030},
         {NULL,               NULL,       FALSE, NULL,                 NULL,  NULL, NULL,          NULL,             0}
     };
     passwd_data = g_string_new ("");
+    group_data = g_string_new ("");
     int i;
     for (i = 0; users[i].user_name; i++)
     {
@@ -1419,13 +1445,24 @@ main (int argc, char **argv)
 
         g_key_file_free (dmrc_file);
 
+        /* Add passwd file entry */
         g_string_append_printf (passwd_data, "%s:%s:%d:%d:%s:%s/home/%s:/bin/sh\n", users[i].user_name, users[i].password, users[i].uid, users[i].uid, users[i].real_name, temp_dir, users[i].user_name);
+
+        /* Add group file entry */
+        g_string_append_printf (group_data, "%s:x:%d:%s\n", users[i].user_name, users[i].uid, users[i].user_name);
     }
-    path = g_build_filename (temp_dir, "passwd", NULL);
-    g_setenv ("LIGHTDM_TEST_PASSWD_FILE", path, TRUE);
+    path = g_build_filename (temp_dir, "etc", "passwd", NULL);
     g_file_set_contents (path, passwd_data->str, -1, NULL);
     g_free (path);
     g_string_free (passwd_data, TRUE);
+
+    /* Add an extra test group */
+    g_string_append_printf (group_data, "test-group:x:111:\n");
+
+    path = g_build_filename (temp_dir, "etc", "group", NULL);
+    g_file_set_contents (path, group_data->str, -1, NULL);
+    g_free (path);
+    g_string_free (group_data, TRUE);
 
     /* Start D-Bus services */
     if (!g_key_file_get_boolean (config, "test-runner-config", "disable-console-kit", NULL))

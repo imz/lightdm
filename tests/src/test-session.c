@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <xcb/xcb.h>
 #include <glib.h>
 #include <glib-object.h>
@@ -76,6 +77,34 @@ request_cb (const gchar *request)
     }
     g_free (r);
 
+    r = g_strdup_printf ("SESSION %s LIST-GROUPS", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+    {
+        int n_groups, i;
+        gid_t *groups;
+        GString *group_list;
+
+        n_groups = getgroups (0, NULL);
+        groups = malloc (sizeof (gid_t) * n_groups);
+        n_groups = getgroups (n_groups, groups);
+        group_list = g_string_new ("");
+        for (i = 0; i < n_groups; i++)
+        {
+            struct group *group;
+
+            if (i != 0)
+                g_string_append (group_list, ",");
+            group = getgrgid (groups[i]);
+            if (group)
+                g_string_append (group_list, group->gr_name);
+            else
+                g_string_append_printf (group_list, "%d", groups[i]);
+        }
+        status_notify ("SESSION %s LIST-GROUPS GROUPS=%s", getenv ("DISPLAY"), group_list->str);
+        g_string_free (group_list, TRUE);
+        free (groups);
+    }
+
     r = g_strdup_printf ("SESSION %s READ-ENV NAME=", getenv ("DISPLAY"));
     if (g_str_has_prefix (request, r))
     {
@@ -87,24 +116,25 @@ request_cb (const gchar *request)
 
     r = g_strdup_printf ("SESSION %s WRITE-STDOUT TEXT=", getenv ("DISPLAY"));
     if (g_str_has_prefix (request, r))
-        g_print ("%s\n", request + strlen (r));
+        g_print ("%s", request + strlen (r));
     g_free (r);
 
     r = g_strdup_printf ("SESSION %s WRITE-STDERR TEXT=", getenv ("DISPLAY"));
     if (g_str_has_prefix (request, r))
-        g_printerr ("%s\n", request + strlen (r));
+        g_printerr ("%s", request + strlen (r));
     g_free (r);
 
-    r = g_strdup_printf ("SESSION %s READ-XSESSION-ERRORS", getenv ("DISPLAY"));
-    if (strcmp (request, r) == 0)
+    r = g_strdup_printf ("SESSION %s READ FILE=", getenv ("DISPLAY"));
+    if (g_str_has_prefix (request, r))
     {
+        const gchar *name = request + strlen (r);
         gchar *contents;
         GError *error = NULL;
 
-        if (g_file_get_contents (".xsession-errors", &contents, NULL, &error))
-            status_notify ("SESSION %s READ-XSESSION-ERRORS TEXT=%s", getenv ("DISPLAY"), contents);
+        if (g_file_get_contents (name, &contents, NULL, &error))
+            status_notify ("SESSION %s READ FILE=%s TEXT=%s", getenv ("DISPLAY"), name, contents);
         else
-            status_notify ("SESSION %s READ-XSESSION-ERRORS ERROR=%s", getenv ("DISPLAY"), error->message);
+            status_notify ("SESSION %s READ FILE=%s ERROR=%s", getenv ("DISPLAY"), name, error->message);
         g_clear_error (&error);
     }
     g_free (r);
@@ -146,8 +176,7 @@ main (int argc, char **argv)
         status_notify ("SESSION %s START USER=%s", getenv ("DISPLAY"), getenv ("USER"));
 
     config = g_key_file_new ();
-    if (g_getenv ("LIGHTDM_TEST_CONFIG"))
-        g_key_file_load_from_file (config, g_getenv ("LIGHTDM_TEST_CONFIG"), G_KEY_FILE_NONE, NULL);
+    g_key_file_load_from_file (config, g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "script", NULL), G_KEY_FILE_NONE, NULL);
 
     connection = xcb_connect (NULL, NULL);
 

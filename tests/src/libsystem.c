@@ -1,7 +1,9 @@
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <pwd.h>
+#include <grp.h>
 #include <security/pam_appl.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -18,6 +20,8 @@ static int console_fd = -1;
 
 static GList *user_entries = NULL;
 static GList *getpwent_link = NULL;
+
+static GList *group_entries = NULL;
 
 struct pam_handle
 {
@@ -43,6 +47,61 @@ geteuid (void)
 int
 initgroups (const char *user, gid_t group)
 {
+    gid_t g[1];
+
+    g[0] = group;
+    setgroups (1, g);
+
+    return 0;
+}
+
+int
+getgroups (int size, gid_t list[])
+{
+    const gchar *group_list;
+    gchar **groups;
+    gint groups_length;
+
+    /* Get groups we are a member of */
+    group_list = g_getenv ("LIGHTDM_TEST_GROUPS");
+    if (!group_list)
+        group_list = "";
+    groups = g_strsplit (group_list, ",", -1);
+    groups_length = g_strv_length (groups);
+
+    if (size != 0)
+    {
+        int i;
+
+        if (groups_length > size)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        for (i = 0; groups[i]; i++)
+            list[i] = atoi (groups[i]);
+    }
+    g_free (groups);
+
+    return groups_length;
+}
+
+int
+setgroups (size_t size, const gid_t *list)
+{
+    size_t i;
+    GString *group_list;
+
+    group_list = g_string_new ("");
+    for (i = 0; i < size; i++)
+    {
+        if (i != 0)
+            g_string_append (group_list, ",");
+        g_string_append_printf (group_list, "%d", list[i]);
+    }
+    g_setenv ("LIGHTDM_TEST_GROUPS", group_list->str, TRUE);
+    g_string_free (group_list, TRUE);
+
     return 0;
 }
 
@@ -73,7 +132,7 @@ open (const char *pathname, int flags, ...)
         va_end (ap);
     }
 
-    _open = (int (*)(const char * pathname, int flags, mode_t mode)) dlsym (RTLD_NEXT, "open");      
+    _open = (int (*)(const char * pathname, int flags, mode_t mode)) dlsym (RTLD_NEXT, "open");
     if (strcmp (pathname, "/dev/console") == 0)
     {
         if (console_fd < 0)
@@ -82,6 +141,17 @@ open (const char *pathname, int flags, ...)
             fcntl (console_fd, F_SETFD, FD_CLOEXEC);
         }
         return console_fd;
+    }
+    else if (strcmp (pathname, CONFIG_DIR "/lightdm.conf") == 0)
+    {
+        gchar *path;
+        int fd;
+
+        path = g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "etc", "lightdm", "lightdm.conf", NULL);
+        fd = _open (path, flags, mode);
+        g_free (path);
+
+        return fd;
     }
     else
         return _open (pathname, flags, mode);
@@ -141,7 +211,7 @@ free_user (gpointer data)
 static void
 load_passwd_file ()
 {
-    gchar *data = NULL, **lines;
+    gchar *path, *data = NULL, **lines;
     gint i;
     GError *error = NULL;
 
@@ -149,7 +219,9 @@ load_passwd_file ()
     user_entries = NULL;
     getpwent_link = NULL;
 
-    g_file_get_contents (g_getenv ("LIGHTDM_TEST_PASSWD_FILE"), &data, NULL, &error);
+    path = g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "etc", "passwd", NULL);
+    g_file_get_contents (path, &data, NULL, &error);
+    g_free (path);
     if (error)
         g_warning ("Error loading passwd file: %s", error->message);
     g_clear_error (&error);
@@ -257,6 +329,99 @@ getpwuid (uid_t uid)
     return link->data;
 }
 
+static void
+free_group (gpointer data)
+{
+    struct group *entry = data;
+  
+    g_free (entry->gr_name);
+    g_free (entry->gr_passwd);
+    g_strfreev (entry->gr_mem);
+    g_free (entry);
+}
+
+static void
+load_group_file ()
+{
+    gchar *path, *data = NULL, **lines;
+    gint i;
+    GError *error = NULL;
+
+    g_list_free_full (group_entries, free_group);
+    group_entries = NULL;
+
+    path = g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "etc", "group", NULL);
+    g_file_get_contents (path, &data, NULL, &error);
+    g_free (path);
+    if (error)
+        g_warning ("Error loading group file: %s", error->message);
+    g_clear_error (&error);
+
+    if (!data)
+        return;
+
+    lines = g_strsplit (data, "\n", -1);
+    g_free (data);
+
+    for (i = 0; lines[i]; i++)
+    {
+        gchar *line, **fields;
+
+        line = g_strstrip (lines[i]);
+        fields = g_strsplit (line, ":", -1);
+        if (g_strv_length (fields) == 4)
+        {
+            struct group *entry = malloc (sizeof (struct group));
+
+            entry->gr_name = g_strdup (fields[0]);
+            entry->gr_passwd = g_strdup (fields[1]);
+            entry->gr_gid = atoi (fields[2]);
+            entry->gr_mem = g_strsplit (fields[3], ",", -1);
+            group_entries = g_list_append (group_entries, entry);
+        }
+        g_strfreev (fields);
+    }
+    g_strfreev (lines);
+}
+
+struct group *
+getgrnam (const char *name)
+{
+    GList *link;
+
+    load_group_file ();
+
+    for (link = group_entries; link; link = link->next)
+    {
+        struct group *entry = link->data;
+        if (strcmp (entry->gr_name, name) == 0)
+            break;
+    }
+    if (!link)
+        return NULL;
+
+    return link->data;
+}
+
+struct group *
+getgrgid (gid_t gid)
+{
+    GList *link;
+
+    load_group_file ();
+
+    for (link = group_entries; link; link = link->next)
+    {
+        struct group *entry = link->data;
+        if (entry->gr_gid == gid)
+            break;
+    }
+    if (!link)
+        return NULL;
+
+    return link->data;
+}
+
 int
 pam_start (const char *service_name, const char *user, const struct pam_conv *conversation, pam_handle_t **pamh)
 {
@@ -278,6 +443,27 @@ pam_start (const char *service_name, const char *user, const struct pam_conv *co
     handle->envlist[0] = NULL;
 
     return PAM_SUCCESS;
+}
+
+static void
+send_info (pam_handle_t *pamh, const char *message)
+{
+    struct pam_message **msg;
+    struct pam_response *resp = NULL;
+
+    msg = calloc (1, sizeof (struct pam_message *));
+    msg[0] = malloc (sizeof (struct pam_message));
+    msg[0]->msg_style = PAM_TEXT_INFO;
+    msg[0]->msg = message;
+    pamh->conversation.conv (1, (const struct pam_message **) msg, &resp, pamh->conversation.appdata_ptr);
+    free (msg[0]);
+    free (msg);
+    if (resp)
+    {
+        if (resp[0].resp)
+            free (resp[0].resp);
+        free (resp);
+    }
 }
 
 int
@@ -319,6 +505,9 @@ pam_authenticate (pam_handle_t *pamh, int flags)
         free (resp);
     }
 
+    if (strcmp (pamh->user, "log-pam") == 0)
+        send_info (pamh, "pam_authenticate");
+
     /* Crash on authenticate */
     if (strcmp (pamh->user, "crash-authenticate") == 0)
         kill (getpid (), SIGSEGV);
@@ -331,32 +520,85 @@ pam_authenticate (pam_handle_t *pamh, int flags)
         password_matches = TRUE;
     else
     {
-        int result;
+        int i, n_messages = 0, password_index, result;
         struct pam_message **msg;
         struct pam_response *resp = NULL;
-    
-        msg = malloc (sizeof (struct pam_message *) * 1);
-        msg[0] = malloc (sizeof (struct pam_message));
-        msg[0]->msg_style = PAM_PROMPT_ECHO_OFF;
-        msg[0]->msg = "Password:";
-        result = pamh->conversation.conv (1, (const struct pam_message **) msg, &resp, pamh->conversation.appdata_ptr);
-        free (msg[0]);
+
+        msg = malloc (sizeof (struct pam_message *) * 5);
+        if (strcmp (pamh->user, "info-prompt") == 0)
+        {
+            msg[n_messages] = malloc (sizeof (struct pam_message));
+            msg[n_messages]->msg_style = PAM_TEXT_INFO;
+            msg[n_messages]->msg = "Welcome to LightDM";
+            n_messages++;
+        }
+        if (strcmp (pamh->user, "multi-info-prompt") == 0)
+        {
+            msg[n_messages] = malloc (sizeof (struct pam_message));
+            msg[n_messages]->msg_style = PAM_TEXT_INFO;
+            msg[n_messages]->msg = "Welcome to LightDM";
+            n_messages++;
+            msg[n_messages] = malloc (sizeof (struct pam_message));
+            msg[n_messages]->msg_style = PAM_ERROR_MSG;
+            msg[n_messages]->msg = "This is an error";
+            n_messages++;
+            msg[n_messages] = malloc (sizeof (struct pam_message));
+            msg[n_messages]->msg_style = PAM_TEXT_INFO;
+            msg[n_messages]->msg = "You should have seen three messages";
+            n_messages++;
+        }
+        msg[n_messages] = malloc (sizeof (struct pam_message));
+        msg[n_messages]->msg_style = PAM_PROMPT_ECHO_OFF;
+        msg[n_messages]->msg = "Password:";
+        password_index = n_messages;
+        n_messages++;
+        result = pamh->conversation.conv (n_messages, (const struct pam_message **) msg, &resp, pamh->conversation.appdata_ptr);
+        for (i = 0; i < n_messages; i++)
+            free (msg[i]);
         free (msg);
         if (result != PAM_SUCCESS)
             return result;
 
         if (resp == NULL)
             return PAM_CONV_ERR;
-        if (resp[0].resp == NULL)
+        if (resp[password_index].resp == NULL)
         {
             free (resp);
             return PAM_CONV_ERR;
         }
 
         if (entry)
-            password_matches = strcmp (entry->pw_passwd, resp[0].resp) == 0;
-        free (resp[0].resp);  
+            password_matches = strcmp (entry->pw_passwd, resp[password_index].resp) == 0;
+        for (i = 0; i < n_messages; i++)
+        {
+            if (resp[i].resp)
+                free (resp[i].resp);
+        }
         free (resp);
+
+        /* Do two factor authentication */
+        if (password_matches && strcmp (pamh->user, "two-factor") == 0)
+        {
+            msg = malloc (sizeof (struct pam_message *) * 1);
+            msg[0] = malloc (sizeof (struct pam_message));
+            msg[0]->msg_style = PAM_PROMPT_ECHO_ON;
+            msg[0]->msg = "OTP:";
+            resp = NULL;
+            result = pamh->conversation.conv (1, (const struct pam_message **) msg, &resp, pamh->conversation.appdata_ptr);
+            free (msg[0]);
+            free (msg);
+
+            if (resp == NULL)
+                return PAM_CONV_ERR;
+            if (resp[0].resp == NULL)
+            {
+                free (resp);
+                return PAM_CONV_ERR;
+            }
+            password_matches = strcmp (resp[0].resp, "otp") == 0;
+            free (resp[0].resp);
+            free (resp);
+        }
     }
 
     /* Special user has home directory created on login */
@@ -510,6 +752,19 @@ pam_open_session (pam_handle_t *pamh, int flags)
     if (pamh == NULL)
         return PAM_SYSTEM_ERR;
 
+    if (strcmp (pamh->user, "session-error") == 0)
+        return PAM_SESSION_ERR;
+
+    if (strcmp (pamh->user, "log-pam") == 0)
+        send_info (pamh, "pam_open_session");
+
+    if (strcmp (pamh->user, "make-home-dir") == 0)
+    {
+        struct passwd *entry;
+        entry = getpwnam (pamh->user);
+        g_mkdir_with_parents (entry->pw_dir, 0755);
+    }
+
     return PAM_SUCCESS;
 }
 
@@ -518,6 +773,9 @@ pam_close_session (pam_handle_t *pamh, int flags)
 {
     if (pamh == NULL)
         return PAM_SYSTEM_ERR;
+
+    if (strcmp (pamh->user, "log-pam") == 0)
+        send_info (pamh, "pam_close_session");
 
     return PAM_SUCCESS;
 }
@@ -530,6 +788,9 @@ pam_acct_mgmt (pam_handle_t *pamh, int flags)
   
     if (!pamh->user)
         return PAM_USER_UNKNOWN;
+
+    if (strcmp (pamh->user, "log-pam") == 0)
+        send_info (pamh, "pam_acct_mgmt");
 
     if (strcmp (pamh->user, "denied") == 0)
         return PAM_PERM_DENIED;
@@ -551,6 +812,9 @@ pam_chauthtok (pam_handle_t *pamh, int flags)
 
     if (pamh == NULL)
         return PAM_SYSTEM_ERR;
+
+    if (strcmp (pamh->user, "log-pam") == 0)
+        send_info (pamh, "pam_chauthtok");
 
     msg = malloc (sizeof (struct pam_message *) * 1);
     msg[0] = malloc (sizeof (struct pam_message));
@@ -587,10 +851,43 @@ pam_setcred (pam_handle_t *pamh, int flags)
     if (pamh == NULL)
         return PAM_SYSTEM_ERR;
 
+    if (strcmp (pamh->user, "log-pam") == 0)
+        send_info (pamh, "pam_setcred");
+
     /* Put the test directories into the path */
     e = g_strdup_printf ("PATH=%s/tests/src/.libs:%s/tests/src:%s/tests/src:%s/src:%s", BUILDDIR, BUILDDIR, SRCDIR, BUILDDIR, pam_getenv (pamh, "PATH"));
     pam_putenv (pamh, e);
     g_free (e);
+
+    if (strcmp (pamh->user, "cred-error") == 0)
+        return PAM_CRED_ERR;
+    if (strcmp (pamh->user, "cred-expired") == 0)
+        return PAM_CRED_EXPIRED;
+    if (strcmp (pamh->user, "cred-unavail") == 0)
+        return PAM_CRED_UNAVAIL;
+
+    /* Join special groups if requested */
+    if (strcmp (pamh->user, "group-member") == 0 && flags & PAM_ESTABLISH_CRED)
+    {
+        struct group *group;
+        gid_t *groups;
+        int groups_length;
+
+        group = getgrnam ("test-group");
+        if (group)
+        {
+            groups_length = getgroups (0, NULL);
+            groups = malloc (sizeof (gid_t) * (groups_length + 1));
+            groups_length = getgroups (groups_length, groups);
+            groups[groups_length] = group->gr_gid;
+            groups_length++;
+            setgroups (groups_length, groups);
+            free (groups);
+        }
+
+        /* We need to pass our group overrides down the child process - the environment via PAM seems the only way to do it easily */
+        pam_putenv (pamh, g_strdup_printf ("LIGHTDM_TEST_GROUPS=%s", g_getenv ("LIGHTDM_TEST_GROUPS")));
+    }
 
     return PAM_SUCCESS;
 }
@@ -600,7 +897,7 @@ pam_end (pam_handle_t *pamh, int pam_status)
 {
     if (pamh == NULL)
         return PAM_SYSTEM_ERR;
-
+  
     free (pamh->service_name);
     if (pamh->user)
         free (pamh->user);

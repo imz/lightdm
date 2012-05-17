@@ -243,7 +243,7 @@ int
 main (int argc, char **argv)
 {
     int i;
-    char *pid_string, *return_lock;
+    char *pid_string;
     GMainLoop *loop;
     gboolean listen_tcp = TRUE;
     gboolean listen_unix = TRUE;
@@ -251,7 +251,6 @@ main (int argc, char **argv)
     guint xdmcp_port = 0;
     gchar *xdmcp_host = NULL;
     int lock_file;
-    FILE *f;
 
     signal (SIGINT, signal_cb);
     signal (SIGTERM, signal_cb);
@@ -345,24 +344,14 @@ main (int argc, char **argv)
     status_notify ("XSERVER :%d START", display_number);
 
     config = g_key_file_new ();
-    if (g_getenv ("LIGHTDM_TEST_CONFIG"))
-        g_key_file_load_from_file (config, g_getenv ("LIGHTDM_TEST_CONFIG"), G_KEY_FILE_NONE, NULL);
+    g_key_file_load_from_file (config, g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "script", NULL), G_KEY_FILE_NONE, NULL);
 
-    return_lock = g_build_filename (g_getenv ("LIGHTDM_TEST_HOME_DIR"), ".xserver-returned", NULL);
-    f = fopen (return_lock, "r");
-    if (f == NULL && g_key_file_has_key (config, "test-xserver-config", "return-value", NULL))
+    if (g_key_file_has_key (config, "test-xserver-config", "return-value", NULL))
     {
         int return_value = g_key_file_get_integer (config, "test-xserver-config", "return-value", NULL);
         status_notify ("XSERVER :%d EXIT CODE=%d", display_number, return_value);
-
-        /* Write lock to stop repeatedly exiting */
-        f = fopen (return_lock, "w");
-        fclose (f);
-
         return return_value;
     }
-    if (f != NULL)
-        fclose (f);
 
     lock_path = g_strdup_printf ("/tmp/.X%d-lock", display_number);
     lock_file = open (lock_path, O_CREAT | O_EXCL | O_WRONLY, 0444);

@@ -772,16 +772,12 @@ update_users (LightDMUserList *user_list)
     }
     else
     {
-        const gchar *passwd_filename;
         GFile *passwd_file;
 
         load_passwd_file (user_list, FALSE);
 
         /* Watch for changes to user list */
 
-        passwd_filename = g_getenv ("LIGHTDM_TEST_PASSWD_FILE");
-        if (!passwd_filename)
-            passwd_filename = PASSWD_FILE;
         passwd_file = g_file_new_for_path (PASSWD_FILE);
         priv->passwd_monitor = g_file_monitor (passwd_file, G_FILE_MONITOR_NONE, NULL, &error);
         g_object_unref (passwd_file);
@@ -1124,7 +1120,8 @@ load_dmrc (LightDMUser *user)
     gchar *path;
     //gboolean have_dmrc;
 
-    priv->dmrc_file = g_key_file_new ();
+    if (!priv->dmrc_file)
+        priv->dmrc_file = g_key_file_new ();
 
     /* Load from the user directory */  
     path = g_build_filename (priv->home_directory, ".dmrc", NULL);
@@ -1312,14 +1309,16 @@ load_accounts_service (LightDMUser *user)
 static void
 load_user_values (LightDMUser *user)
 {
+    LightDMUserPrivate *priv = GET_USER_PRIVATE (user);
+
     load_dmrc (user);
     load_accounts_service (user); // overrides dmrc values
 
     /* Ensure a few guarantees */
-    if (GET_USER_PRIVATE (user)->layouts == NULL)
+    if (priv->layouts == NULL)
     {
-        GET_USER_PRIVATE (user)->layouts = g_malloc (sizeof (gchar));
-        GET_USER_PRIVATE (user)->layouts[0] = NULL;
+        priv->layouts = g_malloc (sizeof (gchar *) * 1);
+        priv->layouts[0] = NULL;
     }
 }
 

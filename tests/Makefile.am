@@ -10,20 +10,30 @@ TESTS = \
 	test-autologin \
 	test-autologin-invalid-user \
 	test-autologin-invalid-session \
-	test-autologin-crash-authenticate \
+	test-crash-authenticate \
 	test-autologin-xserver-crash \
 	test-autologin-session-crash \
 	test-autologin-password \
 	test-autologin-new-authtok \
-	test-autologin-denied \
-	test-autologin-expired \
+	test-pam \
+	test-login-pam \
+	test-denied \
+	test-expired \
+	test-cred-error \
+	test-cred-expired \
+	test-cred-unavail \
+	test-autologin-session-error \
 	test-autologin-logout \
 	test-autologin-previous-session \
 	test-autologin-guest \
 	test-autologin-guest-fail-setup-script \
 	test-autologin-guest-logout \
+	test-group-membership \
+	test-util-path \
 	test-session-stdout \
 	test-session-stderr \
+	test-session-stderr-multi-write \
+	test-session-stderr-backup \
 	test-xauthority \
 	test-system-xauthority \
 	test-user-renamed \
@@ -40,7 +50,12 @@ TESTS = \
 	test-login-gobject-manual \
 	test-login-gobject-manual-previous-session \
 	test-login-gobject-no-password \
+	test-login-gobject-long-username \
+	test-login-gobject-long-password \
+	test-login-gobject-two-factor \
 	test-login-gobject-new-authtok \
+	test-login-gobject-info-prompt \
+	test-login-gobject-multi-info-prompt \
 	test-login-gobject-pick-session \
 	test-login-gobject-previous-session \
 	test-login-gobject-wrong-password \
@@ -56,7 +71,12 @@ TESTS = \
 	test-login-python-manual \
 	test-login-python-manual-previous-session \
 	test-login-python-no-password \
+	test-login-python-long-username \
+	test-login-python-long-password \
+	test-login-python-two-factor \
 	test-login-python-new-authtok \
+	test-login-python-info-prompt \
+	test-login-python-multi-info-prompt \
 	test-login-python-previous-session \
 	test-login-python-wrong-password \
 	test-login-python-invalid-user \
@@ -71,6 +91,7 @@ TESTS = \
 	test-login-session-crash \
 	test-login-xserver-crash \
 	test-home-dir-on-authenticate \
+	test-home-dir-on-session \
 	test-plymouth-active-vt \
 	test-plymouth-inactive-vt \
 	test-plymouth-no-seat \
@@ -107,7 +128,12 @@ TESTS += \
 	test-login-qt-manual \
 	test-login-qt-manual-previous-session \
 	test-login-qt-no-password \
+	test-login-qt-long-username \
+	test-login-qt-long-password \
+	test-login-qt-two-factor \
 	test-login-qt-new-authtok \
+	test-login-qt-info-prompt \
+	test-login-qt-multi-info-prompt \
 	test-login-qt-previous-session \
 	test-login-qt-wrong-password \
 	test-login-qt-invalid-user \
@@ -131,9 +157,6 @@ EXTRA_DIST = \
 	data/xsessions/alternative.desktop \
 	data/xsessions/default.desktop \
 	scripts/autologin.conf \
-	scripts/autologin-crash-authenticate.conf \
-	scripts/autologin-denied.conf \
-	scripts/autologin-expired.conf \
 	scripts/autologin-guest.conf \
 	scripts/autologin-guest-fail-setup-script.conf \
 	scripts/autologin-guest-logout.conf \
@@ -144,13 +167,22 @@ EXTRA_DIST = \
 	scripts/autologin-password.conf \
 	scripts/autologin-previous-session.conf \
 	scripts/autologin-session-crash.conf \
+	scripts/autologin-session-error.conf \
 	scripts/autologin-xserver-crash.conf \
 	scripts/console-kit.conf \
+	scripts/crash-authenticate.conf \
+	scripts/cred-error.conf \
+	scripts/cred-expired.conf \
+	scripts/cred-unavail.conf \
+	scripts/denied.conf \
+	scripts/expired.conf \
 	scripts/greeter-fail-start.conf \
 	scripts/greeter-not-installed.conf \
 	scripts/greeter-xserver-crash.conf \
+	scripts/group-membership.conf \
 	scripts/headless.conf \
 	scripts/home-dir-on-authenticate.conf \
+	scripts/home-dir-on-session.conf \
 	scripts/keyboard-layout.conf \
 	scripts/language.conf \
 	scripts/language-no-accounts-service.conf \
@@ -163,15 +195,21 @@ EXTRA_DIST = \
 	scripts/login-guest-fail-setup-script.conf \
 	scripts/login-guest-logout.conf \
 	scripts/login-guest-no-setup-script.conf \
+	scripts/login-info-prompt.conf \
 	scripts/login-invalid-session.conf \
 	scripts/login-invalid-user.conf \
 	scripts/login-logout.conf \
+	scripts/login-long-username.conf \
+	scripts/login-long-password.conf \
 	scripts/login-manual.conf \
 	scripts/login-manual-previous-session.conf \
+	scripts/login-multi-info-prompt.conf \
 	scripts/login-new-authtok.conf \
 	scripts/login-no-password.conf \
+	scripts/login-pam.conf \
 	scripts/login-pick-session.conf \
 	scripts/login-previous-session.conf \
+	scripts/login-two-factor.conf \
 	scripts/login-session-crash.conf \
 	scripts/login-wrong-password.conf \
 	scripts/login-xserver-crash.conf \
@@ -180,6 +218,7 @@ EXTRA_DIST = \
 	scripts/no-console-kit.conf \
 	scripts/no-keyboard-layout.conf \
 	scripts/no-language.conf \
+	scripts/pam.conf \
 	scripts/plymouth-active-vt.conf \
 	scripts/plymouth-inactive-vt.conf \
 	scripts/plymouth-no-seat.conf \
@@ -189,6 +228,8 @@ EXTRA_DIST = \
 	scripts/script-hook-fail-session-setup.conf \
 	scripts/session-stdout.conf \
 	scripts/session-stderr.conf \
+	scripts/session-stderr-multi-write.conf \
+	scripts/session-stderr-backup.conf \
 	scripts/switch-to-greeter.conf \
 	scripts/switch-to-guest.conf \
 	scripts/switch-to-user.conf \
@@ -197,6 +238,7 @@ EXTRA_DIST = \
 	scripts/switch-to-user-logout.conf \
 	scripts/switch-to-user-no-password.conf \
 	scripts/system-xauthority.conf \
+	scripts/util-path.conf \
 	scripts/user-renamed.conf \
 	scripts/user-renamed-invalid.conf \
 	scripts/vnc-login.conf \
