@@ -30,7 +30,7 @@ BuildRequires: gcc-c++ intltool gnome-common
 BuildRequires: glib2-devel libgio-devel >= 2.26
 BuildRequires: libxcb-devel libXdmcp-devel
 BuildRequires: libdbus-glib-devel
-BuildRequires: gtk-doc
+BuildRequires: gtk-doc yelp-tools itstool
 BuildRequires: libpam-devel
 %{?_enable_gobject:BuildRequires: libxklavier-devel libX11-devel}
 %{?_enable_introspection:BuildRequires: gobject-introspection-devel}
