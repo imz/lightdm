@@ -19,6 +19,7 @@ Source3: %name-autologin.pam
 Source4: %name.wms
 ##Source5: %name-greeter-session.sh
 Source6: %name-tmpfiles.conf
+Source7: %name-greeter.pam
 
 Patch1: %name-%version-%release.patch
 
@@ -150,6 +151,7 @@ mkdir -p %buildroot%_localstatedir/lib/ldm
 # install pam config
 install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
+install -p -m 644 %SOURCE7 %buildroot%_sysconfdir/pam.d/%name-greeter
 
 # install external hook for update_wms
 install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
@@ -171,11 +173,8 @@ install -Dpm 644 %SOURCE3 %buildroot%_prefix/lib/tmpfiles.d/lightdm.conf
 %dir %_sysconfdir/%name
 %dir %_sysconfdir/%name/sessions
 %_sysconfdir/X11/wms-methods.d/lightdm
-%config(noreplace) %_sysconfdir/%name/%name.conf
-%config(noreplace) %_sysconfdir/%name/keys.conf
-%config(noreplace) %_sysconfdir/%name/users.conf
-%config(noreplace) %_sysconfdir/pam.d/%name
-%config(noreplace) %_sysconfdir/pam.d/%name-autologin
+%config(noreplace) %_sysconfdir/%name/*.conf
+%config(noreplace) %_sysconfdir/pam.d/%{name}*
 %_sbindir/%name
 %_man1dir/%name.*
 %_bindir/dm-tool
