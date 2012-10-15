@@ -17,7 +17,7 @@ Source: %name-%version.tar
 Source2: %name.pam
 Source3: %name-autologin.pam
 Source4: %name.wms
-Source5: %name-greeter-session.sh
+##Source5: %name-greeter-session.sh
 Source6: %name-tmpfiles.conf
 
 Patch1: %name-%version-%release.patch
@@ -155,7 +155,7 @@ install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
 # install script to launch dbus
-install -m755 %SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
+##install -m755 %%SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
 
 install -Dpm 644 %SOURCE3 %buildroot%_prefix/lib/tmpfiles.d/lightdm.conf
 
