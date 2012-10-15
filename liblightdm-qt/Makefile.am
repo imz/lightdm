@@ -16,7 +16,7 @@ liblightdm_qt_2_la_LIBADD = \
 liblightdm_qt_2_la_CXXFLAGS = $(LIBLIGHTDM_QT_CFLAGS) \
 	-I$(top_srcdir)/liblightdm-gobject \
 	$(LIBLIGHTDM_GOBJECT_CFLAGS) \
-	-DXSESSIONS_DIR=\"$(datadir)/xsessions\"
+	-DXSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions\"
 
 liblightdm_qt_2include_HEADERS = \
 	QLightDM/Greeter \
