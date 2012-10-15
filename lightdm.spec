@@ -18,6 +18,7 @@ Source2: %name.pam
 Source3: %name-autologin.pam
 Source4: %name.wms
 Source5: %name-greeter-session.sh
+Source6: %name-tmpfiles.conf
 
 Patch1: %name-%version-%release.patch
 
@@ -156,6 +157,8 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 # install script to launch dbus
 install -m755 %SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
 
+install -Dpm 644 %SOURCE3 %buildroot%_prefix/lib/tmpfiles.d/lightdm.conf
+
 %find_lang %name
 
 %pre
@@ -180,7 +183,8 @@ install -m755 %SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
 %attr(775,root,_ldm) %dir %_localstatedir/log/%name
 %attr(775,_ldm,_ldm) %dir %_localstatedir/cache/%name
 %attr(750,_ldm,_ldm) %dir %_localstatedir/lib/ldm
-%ghost %attr(751,_ldm,_ldm) %dir %_localstatedir/run/%name
+%ghost %attr(775,_ldm,_ldm) %dir %_localstatedir/run/%name
+%_prefix/lib/tmpfiles.d/lightdm.conf
 
 %if_enabled gobject
 %files -n liblightdm-gobject
