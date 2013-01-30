@@ -152,7 +152,7 @@ mkdir -p %buildroot%_localstatedir/lib/ldm
 # install pam config
 install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
-install -p -m 644 %SOURCE7 %buildroot%_sysconfdir/pam.d/%name-greeter
+#install -p -m 644 %SOURCE7 %buildroot%_sysconfdir/pam.d/%name-greeter
 
 # install external hook for update_wms
 install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
