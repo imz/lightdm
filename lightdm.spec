@@ -5,8 +5,8 @@
 %def_enable qt
 
 Name: lightdm
-Version: 1.2.2
-Release: alt1.1
+Version: 1.4.0
+Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -216,6 +216,9 @@ install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Wed Jan 30 2013 Alexey Shabalin <shaba@altlinux.ru> 1.4.0-alt1
+- 1.4.0
+
 * Thu Jul 05 2012 Michael Shigorin <mike@altlinux.org> 1.2.2-alt1.1
 - NMU: lightdm-greeter-session expects dbus-launch (closes: #27438)
 

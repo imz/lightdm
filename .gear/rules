@@ -5,5 +5,4 @@ copy: *.patch
 copy: *.wms
 copy: *.sh
 copy: *.conf
-
-
+copy: *.rules
