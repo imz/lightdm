@@ -1137,12 +1137,6 @@ load_dmrc (LightDMUser *user)
     if (priv->language)
         g_free (priv->language);
     priv->language = g_key_file_get_string (priv->dmrc_file, "Desktop", "Language", NULL);
-    if (priv->language)
-    {
-        gchar *codeset = strchr (priv->language, '.');
-        if (codeset)
-            *codeset = '\0';
-    }
 
     if (priv->layouts)
     {
