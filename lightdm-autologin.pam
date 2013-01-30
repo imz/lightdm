@@ -5,4 +5,5 @@ account		include		common-login
 password	include		common-login
 session		substack	common-login
 session		optional	pam_console.so
+-session	optional	pam_ck_connector.so
 session		required	pam_namespace.so
