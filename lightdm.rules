@@ -1,5 +1,5 @@
 polkit.addRule(function(action, subject) {
-    if (subject.user == "lightdm") {
+    if (subject.user == "_ldm") {
         polkit.log("action=" + action);
         polkit.log("subject=" + subject);
         if (action.id.indexOf("org.freedesktop.login1.") == 0) {
