@@ -159,7 +159,7 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 # install script to launch dbus
 ##install -m755 %%SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
 
-install -Dpm 644 %SOURCE3 %buildroot%_prefix/lib/tmpfiles.d/lightdm.conf
+install -Dpm 644 %SOURCE6 %buildroot%_prefix/lib/tmpfiles.d/lightdm.conf
 
 %find_lang %name
 
