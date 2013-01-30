@@ -36,7 +36,7 @@ if [ -d /etc/lightdm/sessions ]; then
 [Desktop Entry]
 Name=$n
 Comment=$n session
-Exec=/etc/X11/Xsession "$n"
+Exec=$n
 Icon=$icon
 Type=Application
 __EOF__
