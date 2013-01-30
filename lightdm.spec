@@ -20,6 +20,7 @@ Source4: %name.wms
 ##Source5: %name-greeter-session.sh
 Source6: %name-tmpfiles.conf
 Source7: %name-greeter.pam
+Source8: %name.rules
 
 Patch1: %name-%version-%release.patch
 
@@ -160,6 +161,7 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 ##install -m755 %%SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
 
 install -Dpm 644 %SOURCE6 %buildroot%_prefix/lib/tmpfiles.d/lightdm.conf
+install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
 
 %find_lang %name
 
@@ -182,8 +184,9 @@ install -Dpm 644 %SOURCE6 %buildroot%_prefix/lib/tmpfiles.d/lightdm.conf
 %attr(775,root,_ldm) %dir %_localstatedir/log/%name
 %attr(775,_ldm,_ldm) %dir %_localstatedir/cache/%name
 %attr(750,_ldm,_ldm) %dir %_localstatedir/lib/ldm
-%ghost %attr(775,_ldm,_ldm) %dir %_localstatedir/run/%name
+%attr(775,_ldm,_ldm) %dir %_localstatedir/run/%name
 %_prefix/lib/tmpfiles.d/lightdm.conf
+%_datadir/polkit-1/rules.d/lightdm.rules
 
 %if_enabled gobject
 %files -n liblightdm-gobject
