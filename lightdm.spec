@@ -5,8 +5,8 @@
 %def_enable qt
 
 Name: lightdm
-Version: 1.4.0
-Release: alt2
+Version: 1.5.0
+Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -216,6 +216,10 @@ install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Mon Feb 04 2013 Alexey Shabalin <shaba@altlinux.ru> 1.5.0-alt1
+- 1.5.0
+- make greeter and user sessions inherit the system default locale (patch from opensuse)
+
 * Thu Jan 31 2013 Alexey Shabalin <shaba@altlinux.ru> 1.4.0-alt2
 - don't requires accountservices
 - requires any greeter
