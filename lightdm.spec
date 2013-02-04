@@ -49,6 +49,7 @@ several toolkits, including HTML/CSS/Javascript.
 %package -n liblightdm-gobject
 Group: System/Libraries
 Summary: LightDM GObject Greeter Library
+License: LGPLv2+
 
 %description -n liblightdm-gobject
 A library for LightDM greeters based on GObject which interfaces with LightDM
@@ -57,6 +58,7 @@ and provides common greeter functionality.
 %package -n liblightdm-qt
 Group: System/Libraries
 Summary: LightDM Qt Greeter Library
+License: LGPLv2+
 
 %description -n liblightdm-qt
 A library for LightDM greeters based on Qt which interfaces with LightDM and
