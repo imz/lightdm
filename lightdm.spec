@@ -34,6 +34,7 @@ BuildRequires: libxcb-devel libXdmcp-devel
 BuildRequires: libdbus-glib-devel
 BuildRequires: gtk-doc yelp-tools itstool
 BuildRequires: libpam-devel
+BuildRequires: libgcrypt-devel
 %{?_enable_gobject:BuildRequires: libxklavier-devel libX11-devel}
 %{?_enable_introspection:BuildRequires: gobject-introspection-devel}
 %{?_enable_qt:BuildRequires: libqt4-devel}
