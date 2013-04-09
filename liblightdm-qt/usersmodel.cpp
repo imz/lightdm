@@ -182,7 +182,10 @@ UsersModel::UsersModel(QObject *parent) :
     // Extend roleNames (we want to keep the "display" role)
     QHash<int, QByteArray> roles = roleNames();
     roles[NameRole] = "name";
+    roles[RealNameRole] = "realName";
     roles[LoggedInRole] = "loggedIn";
+    roles[BackgroundRole] = "background";
+    roles[BackgroundPathRole] = "backgroundPath";
     roles[SessionRole] = "session";
     roles[HasMessagesRole] = "hasMessages";
     roles[ImagePathRole] = "imagePath";
@@ -231,6 +234,8 @@ QVariant UsersModel::data(const QModelIndex &index, int role) const
         return d->users[row].isLoggedIn;
     case UsersModel::BackgroundRole:
         return QPixmap(d->users[row].background);
+    case UsersModel::BackgroundPathRole:
+        return d->users[row].background;
     case UsersModel::HasMessagesRole:
         return d->users[row].hasMessages;
     case UsersModel::ImagePathRole:
@@ -241,4 +246,8 @@ QVariant UsersModel::data(const QModelIndex &index, int role) const
 }
 
 
-#include "usersmodel_moc.cpp"
+#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
+#include "usersmodel_moc5.cpp"
+#else
+#include "usersmodel_moc4.cpp"
+#endif

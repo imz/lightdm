@@ -12,6 +12,7 @@
 #include "test-qt-greeter.h"
 #include "status.h"
 
+static QCoreApplication *app = NULL;
 static QSettings *config = NULL;
 static TestGreeter *greeter = NULL;
 
@@ -59,6 +60,12 @@ static void
 request_cb (const gchar *request)
 {
     gchar *r;
+
+    if (!request)
+    {
+        app->quit ();
+        return;
+    }
   
     r = g_strdup_printf ("GREETER %s AUTHENTICATE", getenv ("DISPLAY"));
     if (strcmp (request, r) == 0)
@@ -95,6 +102,11 @@ request_cb (const gchar *request)
     }
     g_free (r);
 
+    r = g_strdup_printf ("GREETER %s CANCEL-AUTHENTICATION", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+        greeter->cancelAuthentication ();
+    g_free (r);
+
     r = g_strdup_printf ("GREETER %s START-SESSION", getenv ("DISPLAY"));
     if (strcmp (request, r) == 0)
     {
@@ -121,7 +133,7 @@ main(int argc, char *argv[])
 
     status_connect (request_cb);
 
-    QCoreApplication app(argc, argv);
+    app = new QCoreApplication (argc, argv);
 
     signal (SIGINT, signal_cb);
     signal (SIGTERM, signal_cb);
@@ -156,5 +168,5 @@ main(int argc, char *argv[])
     if (greeter->lockHint())
         status_notify ("GREETER %s LOCK-HINT", getenv ("DISPLAY"));
 
-    return app.exec();
+    return app->exec();
 }

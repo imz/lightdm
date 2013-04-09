@@ -21,6 +21,8 @@ TESTS = \
 	test-autologin-python-guest-timeout \
 	test-change-authentication \
 	test-restart-authentication \
+	test-gobject-cancel-authentication \
+	test-python-cancel-authentication \
 	test-pam \
 	test-login-pam \
 	test-denied \
@@ -108,9 +110,17 @@ TESTS = \
 	test-script-hook-fail-display-setup \
 	test-script-hook-fail-greeter-setup \
 	test-script-hook-fail-session-setup \
-    test-lock-seat \
-    test-lock-session \
+	test-lock-seat \
+	test-lock-seat-return-session \
+	test-lock-session \
+	test-lock-session-no-password \
+	test-lock-session-return-session \
 	test-switch-to-greeter \
+	test-switch-to-greeter-new-session \
+	test-switch-to-greeter-new-session-logout-new \
+	test-switch-to-greeter-new-session-logout-old \
+	test-switch-to-greeter-return-session \
+	test-switch-to-greeter-return-session-logout \
 	test-switch-to-guest \
 	test-switch-to-user \
 	test-switch-to-users \
@@ -131,32 +141,62 @@ TESTS = \
 #   test-qt-change-password
 #   test-autologin-create-directory
 
-if COMPILE_LIBLIGHTDM_QT
+if COMPILE_LIBLIGHTDM_QT4
 TESTS += \
-	test-autologin-qt-timeout \
-	test-autologin-qt-guest-timeout \
-	test-login-qt \
-	test-login-qt-manual \
-	test-login-qt-manual-previous-session \
-	test-login-qt-no-password \
-	test-login-qt-long-username \
-	test-login-qt-long-password \
-	test-login-qt-two-factor \
-	test-login-qt-new-authtok \
-	test-login-qt-info-prompt \
-	test-login-qt-multi-info-prompt \
-	test-login-qt-previous-session \
-	test-login-qt-wrong-password \
-	test-login-qt-invalid-user \
-	test-login-qt-invalid-session \
-	test-login-qt-logout \
-	test-login-qt-pick-session \
-	test-login-qt-guest \
-	test-login-qt-guest-disabled \
-	test-login-qt-guest-no-setup-script \
-	test-login-qt-guest-fail-setup-script \
-	test-login-qt-guest-logout \
-	test-login-qt-remote-session
+	test-autologin-qt4-timeout \
+	test-autologin-qt4-guest-timeout \
+	test-qt4-cancel-authentication \
+	test-login-qt4 \
+	test-login-qt4-manual \
+	test-login-qt4-manual-previous-session \
+	test-login-qt4-no-password \
+	test-login-qt4-long-username \
+	test-login-qt4-long-password \
+	test-login-qt4-two-factor \
+	test-login-qt4-new-authtok \
+	test-login-qt4-info-prompt \
+	test-login-qt4-multi-info-prompt \
+	test-login-qt4-previous-session \
+	test-login-qt4-wrong-password \
+	test-login-qt4-invalid-user \
+	test-login-qt4-invalid-session \
+	test-login-qt4-logout \
+	test-login-qt4-pick-session \
+	test-login-qt4-guest \
+	test-login-qt4-guest-disabled \
+	test-login-qt4-guest-no-setup-script \
+	test-login-qt4-guest-fail-setup-script \
+	test-login-qt4-guest-logout \
+	test-login-qt4-remote-session
+endif
+
+if COMPILE_LIBLIGHTDM_QT5
+TESTS += \
+	test-autologin-qt5-timeout \
+	test-autologin-qt5-guest-timeout \
+	test-qt5-cancel-authentication \
+	test-login-qt5 \
+	test-login-qt5-manual \
+	test-login-qt5-manual-previous-session \
+	test-login-qt5-no-password \
+	test-login-qt5-long-username \
+	test-login-qt5-long-password \
+	test-login-qt5-two-factor \
+	test-login-qt5-new-authtok \
+	test-login-qt5-info-prompt \
+	test-login-qt5-multi-info-prompt \
+	test-login-qt5-previous-session \
+	test-login-qt5-wrong-password \
+	test-login-qt5-invalid-user \
+	test-login-qt5-invalid-session \
+	test-login-qt5-logout \
+	test-login-qt5-pick-session \
+	test-login-qt5-guest \
+	test-login-qt5-guest-disabled \
+	test-login-qt5-guest-no-setup-script \
+	test-login-qt5-guest-fail-setup-script \
+	test-login-qt5-guest-logout \
+	test-login-qt5-remote-session
 endif
 
 EXTRA_DIST = \
@@ -166,7 +206,8 @@ EXTRA_DIST = \
 	data/session.conf \
 	data/xgreeters/test-gobject-greeter.desktop \
 	data/xgreeters/test-python-greeter.desktop \
-	data/xgreeters/test-qt-greeter.desktop \
+	data/xgreeters/test-qt4-greeter.desktop \
+	data/xgreeters/test-qt5-greeter.desktop \
 	data/xsessions/alternative.desktop \
 	data/xsessions/default.desktop \
 	scripts/autologin.conf \
@@ -185,6 +226,7 @@ EXTRA_DIST = \
 	scripts/autologin-timeout.conf \
 	scripts/autologin-xserver-crash.conf \
 	scripts/change-authentication.conf \
+	scripts/cancel-authentication.conf \
 	scripts/console-kit.conf \
 	scripts/crash-authenticate.conf \
 	scripts/cred-error.conf \
@@ -205,7 +247,10 @@ EXTRA_DIST = \
 	scripts/language.conf \
 	scripts/language-no-accounts-service.conf \
 	scripts/lock-seat.conf \
+	scripts/lock-seat-return-session.conf \
 	scripts/lock-session.conf \
+	scripts/lock-session-no-password.conf \
+	scripts/lock-session-return-session.conf \
 	scripts/login.conf \
 	scripts/login-crash-authenticate.conf \
 	scripts/login-guest.conf \
@@ -253,6 +298,11 @@ EXTRA_DIST = \
 	scripts/session-stderr-multi-write.conf \
 	scripts/session-stderr-backup.conf \
 	scripts/switch-to-greeter.conf \
+	scripts/switch-to-greeter-new-session.conf \
+	scripts/switch-to-greeter-new-session-logout-new.conf \
+	scripts/switch-to-greeter-new-session-logout-old.conf \
+	scripts/switch-to-greeter-return-session.conf \
+	scripts/switch-to-greeter-return-session-logout.conf \
 	scripts/switch-to-guest.conf \
 	scripts/switch-to-user.conf \
 	scripts/switch-to-users.conf \

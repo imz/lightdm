@@ -2,6 +2,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <pwd.h>
 #include <grp.h>
 #include <security/pam_appl.h>
@@ -21,6 +22,8 @@ static GList *user_entries = NULL;
 static GList *getpwent_link = NULL;
 
 static GList *group_entries = NULL;
+
+static int active_vt = 7;
 
 struct pam_handle
 {
@@ -142,13 +145,29 @@ setresuid (uid_t ruid, uid_t uuid, uid_t suid)
     return 0;
 }
 
+static gchar *
+redirect_path (const gchar *path)
+{ 
+    if (g_str_has_prefix (path, g_getenv ("LIGHTDM_TEST_ROOT")))
+        return g_strdup (path);
+    else if (strcmp (path, CONFIG_DIR "/lightdm.conf") == 0)
+        return g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "etc", "lightdm", "lightdm.conf", NULL);
+    else if (g_str_has_prefix (path, "/tmp/"))
+        return g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "tmp", path + 5, NULL);
+    else
+        return g_strdup (path);
+}
+
 #ifdef __linux__
 static int
 open_wrapper (const char *func, const char *pathname, int flags, mode_t mode)
 {
-    int (*_open) (const char * pathname, int flags, mode_t mode);
+    int (*_open) (const char *pathname, int flags, mode_t mode);
+    gchar *new_path = NULL;
+    int fd;
 
-    _open = (int (*)(const char * pathname, int flags, mode_t mode)) dlsym (RTLD_NEXT, func);
+    _open = (int (*)(const char *pathname, int flags, mode_t mode)) dlsym (RTLD_NEXT, func);
+
     if (strcmp (pathname, "/dev/console") == 0)
     {
         if (console_fd < 0)
@@ -158,19 +177,12 @@ open_wrapper (const char *func, const char *pathname, int flags, mode_t mode)
         }
         return console_fd;
     }
-    else if (strcmp (pathname, CONFIG_DIR "/lightdm.conf") == 0)
-    {
-        gchar *path;
-        int fd;
 
-        path = g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "etc", "lightdm", "lightdm.conf", NULL);
-        fd = _open (path, flags, mode);
-        g_free (path);
+    new_path = redirect_path (pathname);
+    fd = _open (new_path, flags, mode);
+    g_free (new_path);
 
-        return fd;
-    }
-    else
-        return _open (pathname, flags, mode);
+    return fd;
 }
 
 int
@@ -210,14 +222,18 @@ ioctl (int d, int request, void *data)
     if (d > 0 && d == console_fd)
     {
         struct vt_stat *console_state;
+        int *n;
 
         switch (request)
         {
         case VT_GETSTATE:
             console_state = data;
-            console_state->v_active = 7;
-            break;          
+            console_state->v_active = active_vt;
+            break;
         case VT_ACTIVATE:
+            active_vt = GPOINTER_TO_INT (data);
+            break;
+        case VT_WAITACTIVE:
             break;
         }
         return 0;

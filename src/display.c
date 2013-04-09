@@ -85,6 +85,7 @@ struct DisplayPrivate
     /* Hint to select user in greeter */
     gchar *select_user_hint;
     gboolean select_guest_hint;
+    gboolean select_user_attempt_login;
 
     /* TRUE if allowed to log into guest account */
     gboolean allow_guest;
@@ -188,12 +189,13 @@ display_set_autologin_user (Display *display, const gchar *username, gboolean is
 }
 
 void
-display_set_select_user_hint (Display *display, const gchar *username, gboolean is_guest)
+display_set_select_user_hint (Display *display, const gchar *username, gboolean is_guest, gboolean attempt_login)
 {
     g_return_if_fail (display != NULL);
     g_free (display->priv->select_user_hint);
     display->priv->select_user_hint = g_strdup (username);
     display->priv->select_guest_hint = is_guest;
+    display->priv->select_user_attempt_login = attempt_login;
 }
 
 void
@@ -594,9 +596,7 @@ greeter_session_stopped_cb (Session *session, Display *display)
 
     g_debug ("Greeter quit");
 
-    g_signal_handlers_disconnect_matched (display->priv->session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, display);
-    g_object_unref (display->priv->session);
-    display->priv->session = NULL;
+    destroy_session (display);
 
     if (display->priv->stopping)
     {
@@ -674,9 +674,7 @@ user_session_stopped_cb (Session *session, Display *display)
 {
     g_debug ("User session quit");
 
-    g_signal_handlers_disconnect_matched (display->priv->session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, display);
-    g_object_unref (display->priv->session);
-    display->priv->session = NULL;
+    destroy_session (display);
 
     /* This display has ended */
     display_stop (display);
@@ -796,7 +794,7 @@ display_server_ready_cb (DisplayServer *display_server, Display *display)
         g_debug ("Automatically logging in user %s", display->priv->autologin_user);
         result = autologin (display, display->priv->autologin_user, AUTOLOGIN_SERVICE, TRUE, FALSE);
     }
-    else if (display->priv->select_user_hint)
+    else if (display->priv->select_user_hint && display->priv->select_user_attempt_login)
     {
         g_debug ("Logging in user %s", display->priv->select_user_hint);
         result = autologin (display, display->priv->select_user_hint, USER_SERVICE, TRUE, FALSE);
@@ -880,23 +878,17 @@ display_stop (Display *display)
     if (display->priv->session)
     {
         session_stop (display->priv->session);
-        if (display->priv->session && !session_get_is_stopped (display->priv->session))
-            return;
-        g_signal_handlers_disconnect_matched (display->priv->session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, display);
-        g_object_unref (display->priv->session);
-        display->priv->session = NULL;
+        return;
     }
 
     /* Stop the display server after that */
     if (!display_server_get_is_stopped (display->priv->display_server))
     {
         display_server_stop (display->priv->display_server);
-        if (!display_server_get_is_stopped (display->priv->display_server))
-            return;
+        return;
     }
 
     display->priv->stopped = TRUE;
-    g_debug ("Display stopped");
     g_signal_emit (display, signals[STOPPED], 0);
 }
 

@@ -8,6 +8,7 @@
 
 #include "status.h"
 
+static GMainLoop *loop;
 static LightDMGreeter *greeter;
 static xcb_connection_t *connection = NULL;
 static GKeyFile *config;
@@ -55,6 +56,12 @@ static void
 request_cb (const gchar *request)
 {
     gchar *r;
+
+    if (!request)
+    {
+        g_main_loop_quit (loop);
+        return;
+    }
   
     r = g_strdup_printf ("GREETER %s AUTHENTICATE", getenv ("DISPLAY"));
     if (strcmp (request, r) == 0)
@@ -89,6 +96,11 @@ request_cb (const gchar *request)
         lightdm_greeter_respond (greeter, text);
         g_free (text);
     }
+    g_free (r);
+
+    r = g_strdup_printf ("GREETER %s CANCEL-AUTHENTICATION", getenv ("DISPLAY"));
+    if (strcmp (request, r) == 0)
+        lightdm_greeter_cancel_authentication (greeter);
     g_free (r);
 
     r = g_strdup_printf ("GREETER %s START-SESSION", getenv ("DISPLAY"));
@@ -187,8 +199,6 @@ request_cb (const gchar *request)
 int
 main (int argc, char **argv)
 {
-    GMainLoop *main_loop;
-
     signal (SIGINT, signal_cb);
     signal (SIGTERM, signal_cb);
 
@@ -196,7 +206,7 @@ main (int argc, char **argv)
     g_type_init ();
 #endif
 
-    main_loop = g_main_loop_new (NULL, FALSE);
+    loop = g_main_loop_new (NULL, FALSE);
 
     status_connect (request_cb);
 
@@ -242,7 +252,7 @@ main (int argc, char **argv)
     if (lightdm_greeter_get_lock_hint (greeter))
         status_notify ("GREETER %s LOCK-HINT", getenv ("DISPLAY"));
 
-    g_main_loop_run (main_loop);
+    g_main_loop_run (loop);
 
     return EXIT_SUCCESS;
 }
