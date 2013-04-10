@@ -166,7 +166,7 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 install -Dpm 644 %SOURCE6 %buildroot%_prefix/lib/tmpfiles.d/lightdm.conf
 install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
 
-%find_lang %name
+%find_lang --with-gnome %name
 
 %pre
 %_sbindir/groupadd -r -f _ldm >/dev/null 2>&1 || :
@@ -181,7 +181,7 @@ install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
 %config(noreplace) %_sysconfdir/%name/*.conf
 %config(noreplace) %_sysconfdir/pam.d/%{name}*
 %_sbindir/%name
-%_man1dir/%name.*
+%_man1dir/%{name}*
 %_bindir/dm-tool
 %_libexecdir/*
 %attr(775,root,_ldm) %dir %_localstatedir/log/%name
