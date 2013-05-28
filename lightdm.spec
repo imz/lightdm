@@ -5,7 +5,7 @@
 %def_enable qt
 
 Name: lightdm
-Version: 1.5.3
+Version: 1.7.0
 Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
@@ -219,6 +219,9 @@ install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Tue May 28 2013 Alexey Shabalin <shaba@altlinux.ru> 1.7.0-alt1
+- 1.7.0
+
 * Tue Apr 09 2013 Alexey Shabalin <shaba@altlinux.ru> 1.5.3-alt1
 - 1.5.3
 
