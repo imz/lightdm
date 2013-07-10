@@ -1,14 +1,30 @@
-noinst_PROGRAMS = dbus-env test-runner X Xvnc test-gobject-greeter test-session test-script-hook guest-account initctl plymouth vnc-client
-dist_noinst_SCRIPTS = lightdm-session test-python-greeter
+noinst_PROGRAMS = dbus-env \
+                  initctl \
+                  plymouth \
+                  test-gobject-greeter \
+                  test-greeter-wrapper \
+                  test-runner \
+                  test-script-hook \
+                  test-session \
+                  guest-account \
+                  unity-system-compositor \
+                  vnc-client \
+                  X \
+                  Xvnc
+dist_noinst_SCRIPTS = lightdm-session \
+                      test-python-greeter
 noinst_LTLIBRARIES = libsystem.la
 
 libsystem_la_SOURCES = libsystem.c
 libsystem_la_CFLAGS = \
 	$(GLIB_CFLAGS) \
+	$(GIO_UNIX_CFLAGS) \
 	-DSRCDIR=\"$(abs_top_srcdir)\" \
 	-DBUILDDIR=\"$(abs_top_builddir)\" \
+	-DSYSCONFDIR=\"$(sysconfdir)\" \
+	-DLOCALSTATEDIR=\"$(localstatedir)\" \
 	-DCONFIG_DIR=\"$(sysconfdir)/lightdm\"
-libsystem_la_LIBADD = -ldl $(GLIB_LIBS)
+libsystem_la_LIBADD = -ldl $(GLIB_LIBS) $(GIO_UNIX_LIBS)
 
 # This is required to have autotools generate a library that is not installed
 # but produces a shared library (instead of just a static library)
@@ -68,6 +84,15 @@ Xvnc_LDADD = \
 	$(GIO_LIBS) \
 	$(GIO_UNIX_LIBS)
 
+test_greeter_wrapper_SOURCES = test-greeter-wrapper.c status.c status.h
+test_greeter_wrapper_CFLAGS = \
+	$(WARN_CFLAGS) \
+	$(GLIB_CFLAGS) \
+	$(GIO_UNIX_CFLAGS)
+test_greeter_wrapper_LDADD = \
+	$(GLIB_LIBS) \
+	$(GIO_UNIX_LIBS)
+
 test_gobject_greeter_SOURCES = test-gobject-greeter.c status.c status.h
 test_gobject_greeter_CFLAGS = \
 	-I$(top_srcdir)/liblightdm-gobject \
@@ -80,7 +105,7 @@ test_gobject_greeter_LDADD = \
 	-llightdm-gobject-1 \
 	$(GLIB_LIBS) \
 	$(GIO_UNIX_LIBS) \
-	$(XCB_LIBS)
+	$(XCB_LIBS)    
 
 guest_account_SOURCES = guest-account.c status.c status.h
 guest_account_CFLAGS = \
@@ -101,9 +126,9 @@ test_script_hook_LDADD = \
 	$(GIO_UNIX_LIBS)
 
 test-qt4-greeter_moc4.cpp: test-qt-greeter.h
-	$(MOC4) $< -o $@
+	$(am__v_MOC4_$(V)) $(MOC4) $< -o $@
 test-qt5-greeter_moc5.cpp: test-qt-greeter.h
-	$(MOC5) $< -o $@
+	$(am__v_MOC5_$(V)) $(MOC5) $< -o $@
 common_qt_sources = test-qt-greeter.cpp test-qt-greeter.h status.c status.h
 test_qt4_greeter_SOURCES = $(common_qt_sources)
 test_qt5_greeter_SOURCES = $(common_qt_sources)
@@ -169,6 +194,17 @@ plymouth_LDADD = \
 	$(GLIB_LIBS) \
 	$(GIO_UNIX_LIBS)
 
+unity_system_compositor_SOURCES = unity-system-compositor.c status.c status.h
+unity_system_compositor_CFLAGS = \
+	$(WARN_CFLAGS) \
+	$(GLIB_CFLAGS) \
+	$(GIO_CFLAGS) \
+	$(GIO_UNIX_CFLAGS)
+unity_system_compositor_LDADD = \
+	$(GLIB_LIBS) \
+	$(GIO_LIBS) \
+	$(GIO_UNIX_LIBS)
+
 vnc_client_SOURCES = vnc-client.c status.c status.h
 vnc_client_CFLAGS = \
 	$(WARN_CFLAGS) \
@@ -183,3 +219,16 @@ vnc_client_LDADD = \
 CLEANFILES = \
 	test-qt4-greeter_moc4.cpp \
 	test-qt5-greeter_moc5.cpp
+
+# Support pretty printing MOC
+AM_V_MOC4 = $(am__v_MOC4_$(V))
+am__v_MOC4_ = $(am__v_MOC4_$(AM_DEFAULT_VERBOSITY))
+am__v_MOC4_0 = @echo "  MOC4    " $@;
+%_moc4.cpp: QLightDM/%.h
+	$(AM_V_MOC4) $(MOC4) $< -o $@
+
+AM_V_MOC5 = $(am__v_MOC5_$(V))
+am__v_MOC5_ = $(am__v_MOC5_$(AM_DEFAULT_VERBOSITY))
+am__v_MOC5_0 = @echo "  MOC5    " $@;
+%_moc5.cpp: QLightDM/%.h
+	$(AM_V_MOC5) $(MOC5) $< -o $@

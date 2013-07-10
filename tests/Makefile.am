@@ -5,9 +5,14 @@ TESTS = \
 	test-greeter-fail-start \
 	test-greeter-not-installed \
 	test-greeter-xserver-crash \
+	test-greeter-wrapper \
 	test-no-config \
+	test-additional-config \
 	test-headless \
 	test-autologin \
+	test-autologin-in-background \
+	test-autologin-guest-in-background \
+	test-autologin-timeout-in-background \
 	test-autologin-invalid-user \
 	test-autologin-invalid-session \
 	test-crash-authenticate \
@@ -46,10 +51,10 @@ TESTS = \
 	test-system-xauthority \
 	test-user-renamed \
 	test-user-renamed-invalid \
+	test-users-gobject \
+	test-users-python \
 	test-keyboard-layout \
 	test-no-keyboard-layout \
-	test-default-keyboard-layout \
-	test-keyboard-variants \
 	test-language \
 	test-no-language \
 	test-language-no-accounts-service \
@@ -135,6 +140,7 @@ TESTS = \
 	test-no-accounts-service \
 	test-console-kit \
 	test-no-console-kit \
+	test-login1 \
 	test-no-login1 \
 	test-no-console-kit-or-login1 \
 	test-gobject-power \
@@ -146,7 +152,13 @@ TESTS = \
 	test-python-power-no-login1 \
 	test-python-power-no-services \
 	test-open-file-descriptors \
-	test-xdmcp-open-file-descriptors
+	test-xdmcp-open-file-descriptors \
+	test-unity-compositor-command \
+	test-unity-compositor-fail-start \
+	test-unity-compositor-fail-ready \
+	test-unity-autologin \
+	test-unity-login \
+	test-unity-switch
 
 #	test-session-exit-error
 #	test-greeter-no-exit
@@ -181,6 +193,7 @@ TESTS += \
 	test-login-qt4-guest-fail-setup-script \
 	test-login-qt4-guest-logout \
 	test-login-qt4-remote-session \
+	test-users-qt4 \
 	test-qt4-power \
 	test-qt4-power-no-console-kit \
 	test-qt4-power-no-login1 \
@@ -214,10 +227,11 @@ TESTS += \
 	test-login-qt5-guest-fail-setup-script \
 	test-login-qt5-guest-logout \
 	test-login-qt5-remote-session \
-	test-qt4-power \
-	test-qt4-power-no-console-kit \
-	test-qt4-power-no-login1 \
-	test-qt4-power-no-services
+	test-users-qt5 \
+	test-qt5-power \
+	test-qt5-power-no-console-kit \
+	test-qt5-power-no-login1 \
+	test-qt5-power-no-services
 endif
 
 EXTRA_DIST = \
@@ -231,11 +245,17 @@ EXTRA_DIST = \
 	data/xgreeters/test-qt5-greeter.desktop \
 	data/xsessions/alternative.desktop \
 	data/xsessions/default.desktop \
+	scripts/0-additional.conf \
+	scripts/1-additional.conf \
+	scripts/additional-config.conf \
 	scripts/autologin.conf \
 	scripts/autologin-guest.conf \
 	scripts/autologin-guest-fail-setup-script.conf \
 	scripts/autologin-guest-logout.conf \
 	scripts/autologin-guest-timeout.conf \
+	scripts/autologin-in-background.conf \
+	scripts/autologin-guest-in-background.conf \
+	scripts/autologin-timeout-in-background.conf \
 	scripts/autologin-invalid-session.conf \
 	scripts/autologin-invalid-user.conf \
 	scripts/autologin-logout.conf \
@@ -253,18 +273,17 @@ EXTRA_DIST = \
 	scripts/cred-error.conf \
 	scripts/cred-expired.conf \
 	scripts/cred-unavail.conf \
-	scripts/default-keyboard-layout.conf \
 	scripts/denied.conf \
 	scripts/expired.conf \
 	scripts/greeter-fail-start.conf \
 	scripts/greeter-not-installed.conf \
+	scripts/greeter-wrapper.conf \
 	scripts/greeter-xserver-crash.conf \
 	scripts/group-membership.conf \
 	scripts/headless.conf \
 	scripts/home-dir-on-authenticate.conf \
 	scripts/home-dir-on-session.conf \
 	scripts/keyboard-layout.conf \
-	scripts/keyboard-variants.conf \
 	scripts/language.conf \
 	scripts/language-no-accounts-service.conf \
 	scripts/lock-seat.conf \
@@ -272,6 +291,7 @@ EXTRA_DIST = \
 	scripts/lock-session.conf \
 	scripts/lock-session-no-password.conf \
 	scripts/lock-session-return-session.conf \
+	scripts/login1.conf \
 	scripts/login.conf \
 	scripts/login-crash-authenticate.conf \
 	scripts/login-guest.conf \
@@ -337,6 +357,13 @@ EXTRA_DIST = \
 	scripts/switch-to-user-logout.conf \
 	scripts/switch-to-user-no-password.conf \
 	scripts/system-xauthority.conf \
+	scripts/unity-autologin.conf \
+	scripts/unity-compositor-command.conf \
+	scripts/unity-compositor-fail-ready.conf \
+	scripts/unity-compositor-fail-start.conf \
+	scripts/unity-login.conf \
+	scripts/unity-switch.conf \
+	scripts/users.conf \
 	scripts/util-path.conf \
 	scripts/user-renamed.conf \
 	scripts/user-renamed-invalid.conf \
