@@ -29,6 +29,8 @@ static GList *group_entries = NULL;
 
 static int active_vt = 7;
 
+static gboolean status_connected = FALSE;
+
 struct pam_handle
 {
     char *service_name;
@@ -165,6 +167,9 @@ redirect_path (const gchar *path)
     if (g_str_has_prefix (path, LOCALSTATEDIR))
         return g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "var", path + strlen (LOCALSTATEDIR), NULL);
 
+    if (g_str_has_prefix (path, DATADIR))
+        return g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "usr", "share", path + strlen (DATADIR), NULL);
+
     // Don't redirect if inside the build directory
     if (g_str_has_prefix (path, BUILDDIR))
         return g_strdup (path);
@@ -285,6 +290,10 @@ access (const char *pathname, int mode)
     gchar *new_path = NULL;
     int ret;
 
+    /* Look like systemd is always running */
+    if (strcmp (pathname, "/run/systemd/seats/") == 0)
+        return 1;
+
     _access = (int (*)(const char *pathname, int mode)) dlsym (RTLD_NEXT, "access");
 
     new_path = redirect_path (pathname);
@@ -320,7 +329,7 @@ stat64 (const char *path, struct stat *buf)
     _stat64 = (int (*)(const char *path, struct stat *buf)) dlsym (RTLD_NEXT, "stat64");
 
     new_path = redirect_path (path);
-    ret = _stat (new_path, buf);
+    ret = _stat64 (new_path, buf);
     g_free (new_path);
 
     return ret;
@@ -407,6 +416,22 @@ chown (const char *pathname, uid_t owner, gid_t group)
 }
 
 int
+chmod (const char *path, mode_t mode)
+{
+    int (*_chmod) (const char *path, mode_t mode);
+    gchar *new_path = NULL;
+    int result;
+
+    _chmod = (int (*)(const char *path, mode_t mode)) dlsym (RTLD_NEXT, "chmod");
+
+    new_path = redirect_path (path);
+    result = _chmod (new_path, mode);
+    g_free (new_path);
+
+    return result;
+}
+
+int
 ioctl (int d, int request, void *data)
 {
     int (*_ioctl) (int d, int request, void *data);
@@ -416,6 +441,7 @@ ioctl (int d, int request, void *data)
     {
         struct vt_stat *console_state;
         int *n;
+        int vt;
 
         switch (request)
         {
@@ -424,7 +450,14 @@ ioctl (int d, int request, void *data)
             console_state->v_active = active_vt;
             break;
         case VT_ACTIVATE:
-            active_vt = GPOINTER_TO_INT (data);
+            vt = GPOINTER_TO_INT (data);
+            if (vt != active_vt)
+            {
+                active_vt = vt;
+                if (!status_connected)
+                    status_connected = status_connect (NULL);
+                status_notify ("VT ACTIVATE VT=%d", active_vt);
+            }
             break;
         case VT_WAITACTIVE:
             break;
@@ -1219,8 +1252,12 @@ pam_setcred (pam_handle_t *pamh, int flags)
         if (group)
         {
             groups_length = getgroups (0, NULL);
+            if (groups_length < 0)
+                return PAM_SYSTEM_ERR;
             groups = malloc (sizeof (gid_t) * (groups_length + 1));
             groups_length = getgroups (groups_length, groups);
+            if (groups_length < 0)
+                return PAM_SYSTEM_ERR;
             groups[groups_length] = group->gr_gid;
             groups_length++;
             setgroups (groups_length, groups);
@@ -1359,7 +1396,6 @@ xcb_connect_to_display_with_auth_info (const char *display, xcb_auth_info_t *aut
 {
     xcb_connection_t *c;
     gchar *socket_path;
-    GSocketAddress *address;
     GError *error = NULL;
   
     c = malloc (sizeof (xcb_connection_t));
@@ -1384,6 +1420,7 @@ xcb_connect_to_display_with_auth_info (const char *display, xcb_auth_info_t *aut
     if (c->error == 0)
     {
         gchar *d;
+        GSocketAddress *address;
 
         /* Skip the hostname, we'll assume it's localhost */
         d = g_strdup_printf (".x%s", strchr (display, ':'));
@@ -1393,6 +1430,7 @@ xcb_connect_to_display_with_auth_info (const char *display, xcb_auth_info_t *aut
         address = g_unix_socket_address_new (socket_path);
         if (!g_socket_connect (c->socket, address, NULL, &error))
             c->error = XCB_CONN_ERROR;
+        g_object_unref (address);
         if (error)
             g_printerr ("Failed to connect to X socket %s: %s\n", socket_path, error->message);
         g_free (socket_path);
@@ -1403,8 +1441,6 @@ xcb_connect_to_display_with_auth_info (const char *display, xcb_auth_info_t *aut
     if (c->error == 0)
     {
     }
-
-    g_object_unref (address);
 
     return c;
 }

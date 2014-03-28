@@ -5,7 +5,7 @@ liblightdm_gobject_1_la_LIBADD = $(LIBLIGHTDM_GOBJECT_LIBS)
 liblightdm_gobject_1_la_CFLAGS = $(LIBLIGHTDM_GOBJECT_CFLAGS) \
 	$(WARN_CFLAGS) \
 	-DCONFIG_DIR=\"$(sysconfdir)/lightdm\" \
-	-DXSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions\" \
+	-DSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions\" \
 	-DREMOTE_SESSIONS_DIR=\"$(pkgdatadir)/remote-sessions\"
 
 mainheader_HEADERS = lightdm.h

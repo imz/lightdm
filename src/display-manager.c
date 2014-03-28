@@ -17,10 +17,10 @@
 
 #include "display-manager.h"
 #include "configuration.h"
-#include "display.h"
 #include "seat-xlocal.h"
 #include "seat-xremote.h"
 #include "seat-unity.h"
+#include "seat-surfaceflinger.h"
 #include "plymouth.h"
 
 enum {
@@ -150,6 +150,7 @@ display_manager_init (DisplayManager *manager)
     seat_register_module ("xlocal", SEAT_XLOCAL_TYPE);
     seat_register_module ("xremote", SEAT_XREMOTE_TYPE);
     seat_register_module ("unity", SEAT_UNITY_TYPE);
+    seat_register_module ("surfaceflinger", SEAT_SURFACEFLINGER_TYPE);
 }
 
 static void
@@ -185,7 +186,7 @@ display_manager_class_init (DisplayManagerClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (DisplayManagerClass, seat_added),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__OBJECT,
+                      NULL,
                       G_TYPE_NONE, 1, SEAT_TYPE);
     signals[SEAT_REMOVED] =
         g_signal_new ("seat-removed",
@@ -193,7 +194,7 @@ display_manager_class_init (DisplayManagerClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (DisplayManagerClass, seat_removed),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__OBJECT,
+                      NULL,
                       G_TYPE_NONE, 1, SEAT_TYPE);
     signals[STOPPED] =
         g_signal_new ("stopped",
@@ -201,6 +202,6 @@ display_manager_class_init (DisplayManagerClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (DisplayManagerClass, stopped),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__VOID,
+                      NULL,
                       G_TYPE_NONE, 0);
 }

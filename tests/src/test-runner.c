@@ -50,11 +50,14 @@ typedef struct
     gchar *user_name;
     gchar *real_name;
     gchar *home_directory;
+    gchar *image;
+    gchar *background;
     gchar *path;
     guint id;
     gchar *language;
     gchar *xsession;
     gchar **layouts;
+    gboolean has_messages;
     gboolean hidden;
 } AccountsUser;
 static GList *accounts_users = NULL;
@@ -85,10 +88,11 @@ typedef struct
     gchar *cookie;
     gchar *path;
     guint id;
+    gboolean locked;
 } CKSession;
 static GList *ck_sessions = NULL;
 static gint ck_session_index = 0;
-static void handle_session_call (GDBusConnection       *connection,
+static void handle_ck_session_call (GDBusConnection       *connection,
                                     const gchar           *sender,
                                     const gchar           *object_path,
                                     const gchar           *interface_name,
@@ -98,13 +102,14 @@ static void handle_session_call (GDBusConnection       *connection,
                                     gpointer               user_data);
 static const GDBusInterfaceVTable ck_session_vtable =
 {
-    handle_session_call,
+    handle_ck_session_call,
 };
 
 typedef struct
 {
     gchar *path;
     guint pid;
+    gboolean locked;
 } Login1Session;
 
 static GList *login1_sessions = NULL;
@@ -395,6 +400,78 @@ handle_command (const gchar *command)
     {
         sleep (1);
     }
+    else if (strcmp (name, "LIST-SEATS") == 0)
+    {
+        GVariant *result, *value;
+        GString *status;
+        GVariantIter *iter;
+        const gchar *path;
+        int i = 0;
+
+        result = g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                              "org.freedesktop.DisplayManager",
+                                              "/org/freedesktop/DisplayManager",
+                                              "org.freedesktop.DBus.Properties",
+                                              "Get",
+                                              g_variant_new ("(ss)", "org.freedesktop.DisplayManager", "Seats"),
+                                              G_VARIANT_TYPE ("(v)"),
+                                              G_DBUS_CALL_FLAGS_NONE,
+                                              1000,
+                                              NULL,
+                                              NULL);
+
+        status = g_string_new ("RUNNER LIST-SEATS SEATS=");
+        g_variant_get (result, "(v)", &value);
+        g_variant_get (value, "ao", &iter);
+        while (g_variant_iter_loop (iter, "&o", &path))
+        {
+            if (i != 0)
+                g_string_append (status, ",");
+            g_string_append (status, path);
+            i++;
+        }
+        g_variant_unref (value);
+        g_variant_unref (result);
+
+        check_status (status->str);
+        g_string_free (status, TRUE);
+    }
+    else if (strcmp (name, "LIST-SESSIONS") == 0)
+    {
+        GVariant *result, *value;
+        GString *status;
+        GVariantIter *iter;
+        const gchar *path;
+        int i = 0;
+
+        result = g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                              "org.freedesktop.DisplayManager",
+                                              "/org/freedesktop/DisplayManager",
+                                              "org.freedesktop.DBus.Properties",
+                                              "Get",
+                                              g_variant_new ("(ss)", "org.freedesktop.DisplayManager", "Sessions"),
+                                              G_VARIANT_TYPE ("(v)"),
+                                              G_DBUS_CALL_FLAGS_NONE,
+                                              1000,
+                                              NULL,
+                                              NULL);
+
+        status = g_string_new ("RUNNER LIST-SESSIONS SESSIONS=");
+        g_variant_get (result, "(v)", &value);
+        g_variant_get (value, "ao", &iter);
+        while (g_variant_iter_loop (iter, "&o", &path))
+        {
+            if (i != 0)
+                g_string_append (status, ",");
+            g_string_append (status, path);
+            i++;
+        }
+        g_variant_unref (value);
+        g_variant_unref (result);
+
+        check_status (status->str);
+        g_string_free (status, TRUE);
+    }
     else if (strcmp (name, "SWITCH-TO-GREETER") == 0)
     {
         g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
@@ -514,6 +591,84 @@ handle_command (const gchar *command)
         check_status (status_text);
         g_free (status_text);
     }
+    else if (strcmp (name, "UPDATE-USER") == 0)
+    {
+        GString *status_text;
+        gchar *username;
+        AccountsUser *user;
+        GError *error = NULL;
+
+        status_text = g_string_new ("RUNNER UPDATE-USER USERNAME=");
+
+        username = g_hash_table_lookup (params, "USERNAME");
+        g_string_append (status_text, username);
+        user = get_accounts_user_by_name (username);
+        if (user)
+        {
+            if (g_hash_table_lookup (params, "NAME"))
+            {
+                user->user_name = g_strdup (g_hash_table_lookup (params, "NAME"));
+                g_string_append_printf (status_text, " NAME=%s", user->user_name);
+            }
+            if (g_hash_table_lookup (params, "REAL-NAME"))
+            {
+                user->real_name = g_strdup (g_hash_table_lookup (params, "REAL-NAME"));
+                g_string_append_printf (status_text, " REAL-NAME=%s", user->real_name);
+            }
+            if (g_hash_table_lookup (params, "HOME-DIRECTORY"))
+            {
+                user->home_directory = g_strdup (g_hash_table_lookup (params, "HOME-DIRECTORY"));
+                g_string_append_printf (status_text, " HOME-DIRECTORY=%s", user->home_directory);
+            }
+            if (g_hash_table_lookup (params, "IMAGE"))
+            {
+                user->image = g_strdup (g_hash_table_lookup (params, "IMAGE"));
+                g_string_append_printf (status_text, " IMAGE=%s", user->image);
+            }
+            if (g_hash_table_lookup (params, "BACKGROUND"))
+            {
+                user->background = g_strdup (g_hash_table_lookup (params, "BACKGROUND"));
+                g_string_append_printf (status_text, " BACKGROUND=%s", user->background);
+            }
+            if (g_hash_table_lookup (params, "LANGUAGE"))
+            {
+                user->language = g_strdup (g_hash_table_lookup (params, "LANGUAGE"));
+                g_string_append_printf (status_text, " LANGUAGE=%s", user->language);
+            }
+            if (g_hash_table_lookup (params, "LAYOUTS"))
+            {
+                const gchar *value = g_hash_table_lookup (params, "LAYOUTS");
+                user->layouts = g_strsplit (value, ";", -1);
+                g_string_append_printf (status_text, " LAYOUTS=%s", value);
+            }
+            if (g_hash_table_lookup (params, "HAS-MESSAGES"))
+            {
+                user->has_messages = g_strcmp0 (g_hash_table_lookup (params, "HAS-MESSAGES"), "TRUE") == 0;
+                g_string_append_printf (status_text, " HAS-MESSAGES=%s", user->has_messages ? "TRUE" : "FALSE");
+            }
+            if (g_hash_table_lookup (params, "SESSION"))
+            {
+                user->xsession = g_strdup (g_hash_table_lookup (params, "SESSION"));
+                g_string_append_printf (status_text, " SESSION=%s", user->xsession);
+            }
+        }
+        else
+            g_warning ("Unknown user %s", username);
+
+        g_dbus_connection_emit_signal (accounts_connection,
+                                       NULL,
+                                       user->path,
+                                       "org.freedesktop.Accounts.User",
+                                       "Changed",
+                                       g_variant_new ("()"),
+                                       &error);
+        if (error)
+            g_warning ("Failed to emit Changed: %s", error->message);
+        g_clear_error (&error);
+
+        check_status (status_text->str);
+        g_string_free (status_text, TRUE);
+    }
     else if (strcmp (name, "DELETE-USER") == 0)
     {
         gchar *status_text, *username;
@@ -544,9 +699,8 @@ handle_command (const gchar *command)
             GError *error = NULL;
 
             length = strlen (command);
-            g_socket_send (client->socket, (gchar *) &length, sizeof (length), NULL, &error);
-            g_socket_send (client->socket, command, strlen (command), NULL, &error);
-            if (error)
+            if (g_socket_send (client->socket, (gchar *) &length, sizeof (length), NULL, &error) < 0 ||
+                g_socket_send (client->socket, command, strlen (command), NULL, &error) < 0)
                 g_printerr ("Failed to write to client socket: %s\n", error->message);
             g_clear_error (&error);
         }
@@ -808,7 +962,7 @@ upower_name_acquired_cb (GDBusConnection *connection,
 }
 
 static void
-start_upower_daemon ()
+start_upower_daemon (void)
 {
     service_count++;
     g_bus_own_name (G_BUS_TYPE_SYSTEM,
@@ -930,22 +1084,32 @@ handle_ck_call (GDBusConnection       *connection,
         g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
 }
 
-
-/* Shared between CK and Login1 - identical signatures */
 static void
-handle_session_call (GDBusConnection       *connection,
-                     const gchar           *sender,
-                     const gchar           *object_path,
-                     const gchar           *interface_name,
-                     const gchar           *method_name,
-                     GVariant              *parameters,
-                     GDBusMethodInvocation *invocation,
-                     gpointer               user_data)
+handle_ck_session_call (GDBusConnection       *connection,
+                        const gchar           *sender,
+                        const gchar           *object_path,
+                        const gchar           *interface_name,
+                        const gchar           *method_name,
+                        GVariant              *parameters,
+                        GDBusMethodInvocation *invocation,
+                        gpointer               user_data)
 {
+    CKSession *session = user_data;
+
     if (strcmp (method_name, "Lock") == 0)
+    { 
+        if (!session->locked)
+            check_status ("CONSOLE-KIT LOCK-SESSION");
+        session->locked = TRUE;
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    }
     else if (strcmp (method_name, "Unlock") == 0)
+    {
+        if (session->locked)
+            check_status ("CONSOLE-KIT UNLOCK-SESSION");
+        session->locked = FALSE;
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    }
     else
         g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
 }
@@ -1047,6 +1211,36 @@ start_console_kit_daemon (void)
                     NULL);
 }
 
+static void
+handle_login1_session_call (GDBusConnection       *connection,
+                            const gchar           *sender,
+                            const gchar           *object_path,
+                            const gchar           *interface_name,
+                            const gchar           *method_name,
+                            GVariant              *parameters,
+                            GDBusMethodInvocation *invocation,
+                            gpointer               user_data)
+{
+    Login1Session *session = user_data;
+
+    if (strcmp (method_name, "Lock") == 0)
+    {
+        if (!session->locked)
+            check_status ("LOGIN1 LOCK-SESSION");
+        session->locked = TRUE;
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    }
+    else if (strcmp (method_name, "Unlock") == 0)
+    {
+        if (session->locked)
+            check_status ("LOGIN1 UNLOCK-SESSION");
+        session->locked = FALSE;
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    }
+    else
+        g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
+}
+
 static Login1Session *
 open_login1_session (GDBusConnection *connection,
                      GVariant *params)
@@ -1064,7 +1258,7 @@ open_login1_session (GDBusConnection *connection,
         "</node>";
     static const GDBusInterfaceVTable login1_session_vtable =
     {
-        handle_session_call,
+        handle_login1_session_call,
     };
 
     session = g_malloc0 (sizeof (Login1Session));
@@ -1082,7 +1276,7 @@ open_login1_session (GDBusConnection *connection,
                    error->message);
     g_clear_error (&error);
     if (!login1_session_info)
-        return;
+        return NULL;
 
     g_dbus_connection_register_object (connection,
                                        session->path,
@@ -1259,7 +1453,7 @@ login1_name_acquired_cb (GDBusConnection *connection,
 }
 
 static void
-start_login1_daemon ()
+start_login1_daemon (void)
 {
     service_count++;
     g_bus_own_name (G_BUS_TYPE_SYSTEM,
@@ -1378,9 +1572,7 @@ load_passwd_file (void)
         gchar **fields;
         guint uid;
         gchar *user_name, *real_name;
-        GList *link;
         AccountsUser *user = NULL;
-        GError *error = NULL;
 
         fields = g_strsplit (lines[i], ":", -1);
         if (fields == NULL || g_strv_length (fields) < 7)
@@ -1433,6 +1625,13 @@ load_passwd_file (void)
             }
             user->xsession = g_key_file_get_string (dmrc_file, "Desktop", "Session", NULL);
             user->layouts = g_key_file_get_string_list (dmrc_file, "X-Accounts", "Layouts", NULL, NULL);
+            if (!user->layouts)
+            {
+                user->layouts = g_malloc (sizeof (gchar *) * 2);
+                user->layouts[0] = g_key_file_get_string (dmrc_file, "Desktop", "Layout", NULL);
+                user->layouts[1] = NULL;
+            }
+            user->has_messages = g_key_file_get_boolean (dmrc_file, "X-Accounts", "HasMessages", NULL);
             user->path = g_strdup_printf ("/org/freedesktop/Accounts/User%d", uid);
             accounts_user_set_hidden (user, user->hidden, FALSE);
 
@@ -1466,7 +1665,7 @@ handle_accounts_call (GDBusConnection       *connection,
         for (link = accounts_users; link; link = link->next)
         {
             AccountsUser *user = link->data;
-            if (!user->hidden)
+            if (!user->hidden && user->uid >= 1000)
                 g_variant_builder_add_value (&builder, g_variant_new_object_path (user->path));
         }
 
@@ -1474,7 +1673,6 @@ handle_accounts_call (GDBusConnection       *connection,
     }
     else if (strcmp (method_name, "FindUserByName") == 0)
     {
-        GList *link;
         AccountsUser *user = NULL;
         gchar *user_name;
 
@@ -1482,8 +1680,12 @@ handle_accounts_call (GDBusConnection       *connection,
 
         load_passwd_file ();
         user = get_accounts_user_by_name (user_name);
-        if (user && !user->hidden)
+        if (user)
+        {
+            if (user->hidden)
+                accounts_user_set_hidden (user, FALSE, TRUE);
             g_dbus_method_invocation_return_value (invocation, g_variant_new ("(o)", user->path));
+        }
         else
             g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such user: %s", user_name);
     }
@@ -1535,10 +1737,14 @@ handle_user_get_property (GDBusConnection       *connection,
         return g_variant_new_string (user->real_name);
     else if (strcmp (property_name, "HomeDirectory") == 0)
         return g_variant_new_string (user->home_directory);
+    else if (strcmp (property_name, "SystemAccount") == 0)
+        return g_variant_new_boolean (user->uid < 1000);
     else if (strcmp (property_name, "BackgroundFile") == 0)
-        return g_variant_new_string ("");
+        return g_variant_new_string (user->background ? user->background : "");
     else if (strcmp (property_name, "Language") == 0)
         return g_variant_new_string (user->language ? user->language : "");
+    else if (strcmp (property_name, "IconFile") == 0)
+        return g_variant_new_string (user->image ? user->image : "");
     else if (strcmp (property_name, "XSession") == 0)
         return g_variant_new_string (user->xsession ? user->xsession : "");
     else if (strcmp (property_name, "XKeyboardLayouts") == 0)
@@ -1549,7 +1755,7 @@ handle_user_get_property (GDBusConnection       *connection,
             return g_variant_new_strv (NULL, 0);
     }
     else if (strcmp (property_name, "XHasMessages") == 0)
-        return g_variant_new_boolean (FALSE);
+        return g_variant_new_boolean (user->has_messages);
 
     return NULL;
 }
@@ -1590,11 +1796,14 @@ accounts_name_acquired_cb (GDBusConnection *connection,
         "    <property name='UserName' type='s' access='read'/>"
         "    <property name='RealName' type='s' access='read'/>"
         "    <property name='HomeDirectory' type='s' access='read'/>"
+        "    <property name='SystemAccount' type='b' access='read'/>"
         "    <property name='BackgroundFile' type='s' access='read'/>"
         "    <property name='Language' type='s' access='read'/>"
+        "    <property name='IconFile' type='s' access='read'/>"
         "    <property name='XSession' type='s' access='read'/>"
         "    <property name='XKeyboardLayouts' type='as' access='read'/>"
         "    <property name='XHasMessages' type='b' access='read'/>"
+        "    <signal name='Changed' />"
         "  </interface>"
         "</node>";
     GError *error = NULL;
@@ -1660,9 +1869,6 @@ run_lightdm (void)
     if (getenv ("DEBUG"))
         g_string_append (command_line, " --debug");
     g_string_append_printf (command_line, " --cache-dir %s/cache", temp_dir);
-    g_string_append_printf (command_line, " --xsessions-dir=%s/usr/share/xsessions", temp_dir);
-    g_string_append_printf (command_line, " --remote-sessions-dir=%s/usr/share/remote-sessions", temp_dir);
-    g_string_append_printf (command_line, " --xgreeters-dir=%s/usr/share/xgreeters", temp_dir);
 
     test_runner_command = g_strdup_printf ("PATH=%s LD_PRELOAD=%s LD_LIBRARY_PATH=%s LIGHTDM_TEST_ROOT=%s DBUS_SESSION_BUS_ADDRESS=%s %s\n",
                                            g_getenv ("PATH"), g_getenv ("LD_PRELOAD"), g_getenv ("LD_LIBRARY_PATH"), g_getenv ("LIGHTDM_TEST_ROOT"), g_getenv ("DBUS_SESSION_BUS_ADDRESS"),
@@ -1699,7 +1905,8 @@ main (int argc, char **argv)
 {
     GMainLoop *loop;
     int i;
-    gchar *greeter = NULL, *script_name, *config_file, *additional_config, *path, *path1, *path2, *ld_preload, *ld_library_path, *home_dir;
+    gchar *greeter = NULL, *script_name, *config_file, *additional_system_config;
+    gchar *additional_config, *path, *path1, *path2, *ld_preload, *ld_library_path, *home_dir;
     GString *passwd_data, *group_data;
     GSource *status_source;
     gchar cwd[1024];
@@ -1820,9 +2027,9 @@ main (int argc, char **argv)
     /* Set up a skeleton file system */
     g_mkdir_with_parents (g_strdup_printf ("%s/etc", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/usr/share", temp_dir), 0755);
-    g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/xsessions", temp_dir), 0755);
-    g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/remote-sessions", temp_dir), 0755);
-    g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/xgreeters", temp_dir), 0755);
+    g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/lightdm/sessions", temp_dir), 0755);
+    g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/lightdm/remote-sessions", temp_dir), 0755);
+    g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/lightdm/greeters", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/tmp", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/var/run", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/var/log", temp_dir), 0755);
@@ -1832,6 +2039,20 @@ main (int argc, char **argv)
     if (!g_key_file_has_key (config, "test-runner-config", "have-config", NULL) || g_key_file_get_boolean (config, "test-runner-config", "have-config", NULL))
         if (system (g_strdup_printf ("cp %s %s/etc/lightdm/lightdm.conf", config_path, temp_dir)))
             perror ("Failed to copy configuration");
+
+    additional_system_config = g_key_file_get_string (config, "test-runner-config", "additional-system-config", NULL);
+    if (additional_system_config)
+    {
+        gchar **files;
+
+        g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/lightdm/lightdm.conf.d", temp_dir), 0755);
+
+        files = g_strsplit (additional_system_config, " ", -1);
+        for (i = 0; files[i]; i++)
+            if (system (g_strdup_printf ("cp %s/tests/scripts/%s %s/usr/share/lightdm/lightdm.conf.d", SRCDIR, files[i], temp_dir)))
+                perror ("Failed to copy configuration");
+        g_strfreev (files);
+    }
 
     additional_config = g_key_file_get_string (config, "test-runner-config", "additional-config", NULL);
     if (additional_config)
@@ -1852,15 +2073,15 @@ main (int argc, char **argv)
         perror ("Failed to copy configuration");
 
     /* Copy over the greeter files */
-    if (system (g_strdup_printf ("cp %s/xsessions/* %s/usr/share/xsessions", DATADIR, temp_dir)))
-        perror ("Failed to copy xsessions");
-    if (system (g_strdup_printf ("cp %s/remote-sessions/* %s/usr/share/remote-sessions", DATADIR, temp_dir)))
+    if (system (g_strdup_printf ("cp %s/sessions/* %s/usr/share/lightdm/sessions", DATADIR, temp_dir)))
+        perror ("Failed to copy sessions");
+    if (system (g_strdup_printf ("cp %s/remote-sessions/* %s/usr/share/lightdm/remote-sessions", DATADIR, temp_dir)))
         perror ("Failed to copy remote sessions");
-    if (system (g_strdup_printf ("cp %s/xgreeters/* %s/usr/share/xgreeters", DATADIR, temp_dir)))
-        perror ("Failed to copy xgreeters");
+    if (system (g_strdup_printf ("cp %s/greeters/* %s/usr/share/lightdm/greeters", DATADIR, temp_dir)))
+        perror ("Failed to copy greeters");
 
     /* Set up the default greeter */
-    path = g_build_filename (temp_dir, "usr", "share", "xgreeters", "default.desktop", NULL);
+    path = g_build_filename (temp_dir, "usr", "share", "lightdm", "greeters", "default.desktop", NULL);
     greeter = g_strdup_printf ("%s.desktop", argv[2]);
     if (symlink (greeter, path) < 0)
     {
@@ -1877,77 +2098,76 @@ main (int argc, char **argv)
     {
         gchar *user_name;
         gchar *password;
-        gboolean have_home_dir;
         gchar *real_name;
-        gchar *xsession;
-        gchar *dmrc_layout;
-        gchar *dbus_layouts;
-        gchar *language;
         gint uid;
     } users[] =
     {
         /* Root account */
-        {"root",             "",         TRUE,  "root",               NULL,  NULL, NULL,          NULL,             0},
+        {"root",             "",          "root",                  0},
         /* Unprivileged account for greeters */
-        {"lightdm",          "",         TRUE,  "",                   NULL,  NULL, NULL,          NULL,           100},
+        {"lightdm",          "",          "",                    100},
         /* These accounts have a password */
-        {"have-password1",   "password", TRUE,  "Password User 1",    NULL,  NULL, NULL,          NULL,          1000},
-        {"have-password2",   "password", TRUE,  "Password User 2",    NULL,  NULL, NULL,          NULL,          1001},
-        {"have-password3",   "password", TRUE,  "Password User 3",    NULL,  NULL, NULL,          NULL,          1002},
-        {"have-password4",   "password", TRUE,  "Password User 4",    NULL,  NULL, NULL,          NULL,          1003},
+        {"have-password1",   "password",  "Password User 1",    1000},
+        {"have-password2",   "password",  "Password User 2",    1001},
+        {"have-password3",   "password",  "Password User 3",    1002},
+        {"have-password4",   "password",  "Password User 4",    1003},
         /* This account always prompts for a password, even if using the lightdm-autologin service */
-        {"always-password",  "password", TRUE,  "Password User 4",    NULL,  NULL, NULL,          NULL,          1004},
+        {"always-password",  "password",  "Password User 4",    1004},
         /* These accounts have no password */
-        {"no-password1",     "",         TRUE,  "No Password User 1", NULL,  NULL, NULL,          NULL,          1005},
-        {"no-password2",     "",         TRUE,  "No Password User 2", NULL,  NULL, NULL,          NULL,          1006},
-        {"no-password3",     "",         TRUE,  "No Password User 3", NULL,  NULL, NULL,          NULL,          1007},
-        {"no-password4",     "",         TRUE,  "No Password User 4", NULL,  NULL, NULL,          NULL,          1008},
+        {"no-password1",     "",          "No Password User 1", 1005},
+        {"no-password2",     "",          "No Password User 2", 1006},
+        {"no-password3",     "",          "No Password User 3", 1007},
+        {"no-password4",     "",          "No Password User 4", 1008},
         /* This account has a keyboard layout */
-        {"have-layout",      "",         TRUE,  "Layout User",        NULL,  "us", NULL,          NULL,          1009},
+        {"have-layout",      "",          "Layout User",        1009},
         /* This account has a set of keyboard layouts */
-        {"have-layouts",     "",         TRUE,  "Layouts User",       NULL,  "ru", "fr\toss;ru;", NULL,          1010},
+        {"have-layouts",     "",          "Layouts User",       1010},
         /* This account has a language set */
-        {"have-language",    "",         TRUE,  "Language User",      NULL,  NULL, NULL,          "en_AU.utf8",  1011},
+        {"have-language",    "",          "Language User",      1011},
         /* This account has a preconfigured session */
-        {"have-session",            "",  TRUE,  "Session User", "alternative", NULL, NULL,        NULL,          1012},
+        {"have-session",            "",   "Session User",       1012},
         /* This account has the home directory mounted on login */
-        {"mount-home-dir",   "",         FALSE, "Mounted Home Dir User", NULL, NULL, NULL,        NULL,          1013},
+        {"mount-home-dir",   "",          "Mounted Home Dir User", 1013},
         /* This account is denied access */
-        {"denied",           "",         TRUE,  "Denied User",        NULL,  NULL, NULL,          NULL,          1014},
+        {"denied",           "",          "Denied User",        1014},
         /* This account has expired */
-        {"expired",          "",         TRUE,  "Expired User",       NULL,  NULL, NULL,          NULL,          1015},
+        {"expired",          "",          "Expired User",       1015},
         /* This account needs a password change */
-        {"new-authtok",      "",         TRUE,  "New Token User",     NULL,  NULL, NULL,          NULL,          1016},
+        {"new-authtok",      "",          "New Token User",     1016},
         /* This account is switched to change-user2 when authentication succeeds */
-        {"change-user1",     "",         TRUE,  "Change User 1",      NULL,  NULL, NULL,          NULL,          1017},
-        {"change-user2",     "",         TRUE,  "Change User 2",      NULL,  NULL, NULL,          NULL,          1018},
+        {"change-user1",     "",          "Change User 1",      1017},
+        {"change-user2",     "",          "Change User 2",      1018},
         /* This account switches to invalid-user when authentication succeeds */
-        {"change-user-invalid", "",      TRUE,  "Invalid Change User",NULL,  NULL, NULL,          NULL,          1019},
+        {"change-user-invalid", "",       "Invalid Change User", 1019},
         /* This account crashes on authentication */
-        {"crash-authenticate", "",       TRUE,  "Crash Auth User",    NULL,  NULL, NULL,          NULL,          1020},
+        {"crash-authenticate", "",        "Crash Auth User",    1020},
         /* This account shows an informational prompt on login */
-        {"info-prompt",      "password", TRUE,  "Info Prompt",        NULL,  NULL, NULL,          NULL,          1021},
+        {"info-prompt",      "password",  "Info Prompt",        1021},
         /* This account shows multiple informational prompts on login */
-        {"multi-info-prompt","password", TRUE,  "Multi Info Prompt",  NULL,  NULL, NULL,          NULL,          1022},
+        {"multi-info-prompt","password",  "Multi Info Prompt",  1022},
         /* This account uses two factor authentication */
-        {"two-factor",       "password", TRUE,  "Two Factor",         NULL,  NULL, NULL,          NULL,          1023},
+        {"two-factor",       "password",  "Two Factor",         1023},
         /* This account has a special group */
-        {"group-member",     "password", TRUE,  "Group Member",       NULL,  NULL, NULL,          NULL,          1024},
+        {"group-member",     "password",  "Group Member",       1024},
         /* This account has the home directory created when the session starts */
-        {"make-home-dir",    "",         FALSE, "Make Home Dir User", NULL,  NULL, NULL,          NULL,          1025},
+        {"make-home-dir",    "",          "Make Home Dir User", 1025},
         /* This account fails to open a session */
-        {"session-error",    "password", TRUE,  "Session Error",      NULL,  NULL, NULL,          NULL,          1026},
+        {"session-error",    "password",  "Session Error",      1026},
         /* This account can't establish credentials */
-        {"cred-error",       "password", TRUE,  "Cred Error",         NULL,  NULL, NULL,          NULL,          1027},
+        {"cred-error",       "password",  "Cred Error",         1027},
         /* This account has expired credentials */
-        {"cred-expired",     "password", TRUE,  "Cred Expired",       NULL,  NULL, NULL,          NULL,          1028},
+        {"cred-expired",     "password",  "Cred Expired",       1028},
         /* This account has cannot access their credentials */
-        {"cred-unavail",     "password", TRUE,  "Cred Unavail",       NULL,  NULL, NULL,          NULL,          1029},
+        {"cred-unavail",     "password",  "Cred Unavail",       1029},
         /* This account sends informational messages for each PAM function that is called */
-        {"log-pam",          "password", TRUE,  "Log PAM",            NULL,  NULL, NULL,          NULL,          1030},
+        {"log-pam",          "password",  "Log PAM",            1030},
         /* This account shows multiple prompts on login */
-        {"multi-prompt",     "password", TRUE,  "Multi Prompt",       NULL,  NULL, NULL,          NULL,          1031},
-        {NULL,               NULL,       FALSE, NULL,                 NULL,  NULL, NULL,          NULL,             0}
+        {"multi-prompt",     "password",  "Multi Prompt",       1031},
+        /* This account has an existing corrupt X authority */
+        {"corrupt-xauth",    "password",  "Corrupt Xauthority", 1032},
+        /* User to test properties */
+        {"prop-user",        "",          "TEST",               1033},
+        {NULL,               NULL,        NULL,                    0}
     };
     passwd_data = g_string_new ("");
     group_data = g_string_new ("");
@@ -1956,7 +2176,7 @@ main (int argc, char **argv)
         GKeyFile *dmrc_file;
         gboolean save_dmrc = FALSE;
 
-        if (users[i].have_home_dir)
+        if (strcmp (users[i].user_name, "mount-home-dir") != 0 && strcmp (users[i].user_name, "make-home-dir") != 0)
         {
             path = g_build_filename (home_dir, users[i].user_name, NULL);
             g_mkdir_with_parents (path, 0755);
@@ -1966,25 +2186,25 @@ main (int argc, char **argv)
         }
 
         dmrc_file = g_key_file_new ();
-        if (users[i].xsession)
+        if (strcmp (users[i].user_name, "have-session") == 0)
         {
-            g_key_file_set_string (dmrc_file, "Desktop", "Session", users[i].xsession);
+            g_key_file_set_string (dmrc_file, "Desktop", "Session", "alternative");
             save_dmrc = TRUE;
         }
-        if (users[i].dmrc_layout)
+        if (strcmp (users[i].user_name, "have-layout") == 0)
         {
-            g_key_file_set_string (dmrc_file, "Desktop", "Layout", users[i].dmrc_layout);
+            g_key_file_set_string (dmrc_file, "Desktop", "Layout", "us");
             save_dmrc = TRUE;
         }
-        if (users[i].dbus_layouts)
+        if (strcmp (users[i].user_name, "have-layouts") == 0)
         {
-            g_key_file_set_string (dmrc_file, "X-Accounts", "Layouts", users[i].dbus_layouts);
+            g_key_file_set_string (dmrc_file, "Desktop", "Layout", "ru");
+            g_key_file_set_string (dmrc_file, "X-Accounts", "Layouts", "fr\toss;ru;");
             save_dmrc = TRUE;
-
         }
-        if (users[i].language)
+        if (strcmp (users[i].user_name, "have-language") == 0)
         {
-            g_key_file_set_string (dmrc_file, "Desktop", "Language", users[i].language);
+            g_key_file_set_string (dmrc_file, "Desktop", "Language", "en_AU.utf8");
             save_dmrc = TRUE;
         }
 
@@ -2000,6 +2220,17 @@ main (int argc, char **argv)
         }
 
         g_key_file_free (dmrc_file);
+
+        /* Write corrupt X authority file */
+        if (strcmp (users[i].user_name, "corrupt-xauth") == 0)
+        {
+            gchar data[1] = { 0xFF };
+
+            path = g_build_filename (home_dir, users[i].user_name, ".Xauthority", NULL);
+            g_file_set_contents (path, data, 1, NULL);
+            chmod (path, S_IRUSR | S_IWUSR);
+            g_free (path);
+        }
 
         /* Add passwd file entry */
         g_string_append_printf (passwd_data, "%s:%s:%d:%d:%s:%s/home/%s:/bin/sh\n", users[i].user_name, users[i].password, users[i].uid, users[i].uid, users[i].real_name, temp_dir, users[i].user_name);

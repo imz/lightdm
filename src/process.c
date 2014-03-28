@@ -297,6 +297,8 @@ process_finalize (GObject *object)
 
     g_free (self->priv->command);
     g_hash_table_unref (self->priv->env);
+    if (self->priv->quit_timeout)
+        g_source_remove (self->priv->quit_timeout);
     if (self->priv->watch)
         g_source_remove (self->priv->watch);
 
@@ -322,8 +324,9 @@ handle_signal (GIOChannel *source, GIOCondition condition, gpointer data)
     pid_t pid;
     Process *process;
 
-    if (read (signal_pipe[0], &signo, sizeof (int)) < 0 || 
-        read (signal_pipe[0], &pid, sizeof (pid_t)) < 0)
+    errno = 0;
+    if (read (signal_pipe[0], &signo, sizeof (int)) != sizeof (int) || 
+        read (signal_pipe[0], &pid, sizeof (pid_t)) != sizeof (pid_t))
     {
         g_warning ("Error reading from signal pipe: %s", strerror (errno));
         return TRUE;
@@ -358,7 +361,7 @@ process_class_init (ProcessClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (ProcessClass, run),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__VOID,
+                      NULL,
                       G_TYPE_NONE, 0); 
     signals[GOT_DATA] =
         g_signal_new ("got-data",
@@ -366,7 +369,7 @@ process_class_init (ProcessClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (ProcessClass, got_data),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__VOID,
+                      NULL,
                       G_TYPE_NONE, 0); 
     signals[GOT_SIGNAL] =
         g_signal_new ("got-signal",
@@ -374,7 +377,7 @@ process_class_init (ProcessClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (ProcessClass, got_signal),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__INT,
+                      NULL,
                       G_TYPE_NONE, 1, G_TYPE_INT);
     signals[STOPPED] =
         g_signal_new ("stopped",
@@ -382,7 +385,7 @@ process_class_init (ProcessClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (ProcessClass, stopped),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__VOID,
+                      NULL,
                       G_TYPE_NONE, 0);
 
     /* Catch signals and feed them to the main loop via a pipe */

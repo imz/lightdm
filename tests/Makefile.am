@@ -6,14 +6,23 @@ TESTS = \
 	test-greeter-not-installed \
 	test-greeter-xserver-crash \
 	test-greeter-wrapper \
+	test-greeter-default-session \
+	test-greeter-allow-guest \
+	test-greeter-hide-users \
+	test-greeter-show-manual-login \
+	test-greeter-show-remote-login \
 	test-no-config \
 	test-additional-config \
+	test-additional-config-priority \
+	test-additional-system-config \
+	test-additional-system-config-priority \
 	test-headless \
 	test-autologin \
 	test-autologin-in-background \
 	test-autologin-guest-in-background \
 	test-autologin-timeout-in-background \
 	test-autologin-invalid-user \
+	test-autologin-invalid-greeter \
 	test-autologin-invalid-session \
 	test-crash-authenticate \
 	test-autologin-xserver-crash \
@@ -22,12 +31,9 @@ TESTS = \
 	test-autologin-new-authtok \
 	test-autologin-gobject-timeout \
 	test-autologin-gobject-guest-timeout \
-	test-autologin-python-timeout \
-	test-autologin-python-guest-timeout \
 	test-change-authentication \
 	test-restart-authentication \
 	test-gobject-cancel-authentication \
-	test-python-cancel-authentication \
 	test-pam \
 	test-login-pam \
 	test-denied \
@@ -41,24 +47,33 @@ TESTS = \
 	test-autologin-guest \
 	test-autologin-guest-fail-setup-script \
 	test-autologin-guest-logout \
+	test-guest-wrapper \
 	test-group-membership \
+	test-xdg-current-desktop \
+	test-xdg-seat \
+	test-language-env \
 	test-util-path \
 	test-session-stdout \
 	test-session-stderr \
 	test-session-stderr-multi-write \
 	test-session-stderr-backup \
 	test-xauthority \
+	test-corrupt-xauthority \
 	test-system-xauthority \
 	test-user-renamed \
 	test-user-renamed-invalid \
+	test-user-name \
+	test-user-image \
+	test-user-background \
+	test-user-layout \
+	test-user-has-messages \
+	test-user-session \
+	test-user-logged-in \
 	test-users-gobject \
-	test-users-python \
-	test-keyboard-layout \
-	test-no-keyboard-layout \
 	test-language \
-	test-no-language \
 	test-language-no-accounts-service \
 	test-login-crash-authenticate \
+	test-login-invalid-greeter \
 	test-login-gobject \
 	test-login-gobject-manual \
 	test-login-gobject-manual-previous-session \
@@ -71,6 +86,8 @@ TESTS = \
 	test-login-gobject-multi-info-prompt \
 	test-login-gobject-multi-prompt \
 	test-login-gobject-pick-session \
+	test-login-gobject-remember-session \
+	test-login-gobject-manual-remember-session \
 	test-login-gobject-previous-session \
 	test-login-gobject-wrong-password \
 	test-login-gobject-invalid-user \
@@ -82,6 +99,86 @@ TESTS = \
 	test-login-gobject-guest-fail-setup-script \
 	test-login-gobject-guest-logout \
 	test-login-gobject-remote-session \
+	test-login-session-crash \
+	test-login-xserver-crash \
+	test-xserver-no-share \
+	test-home-dir-on-authenticate \
+	test-home-dir-on-session \
+	test-plymouth-active-vt \
+	test-plymouth-inactive-vt \
+	test-plymouth-no-seat \
+	test-script-hooks \
+	test-script-hook-fail-display-setup \
+	test-script-hook-fail-greeter-setup \
+	test-script-hook-fail-session-setup \
+	test-upstart-autologin \
+	test-upstart-login \
+	test-dbus \
+	test-lock-seat \
+	test-lock-seat-return-session \
+	test-lock-session \
+	test-lock-session-no-password \
+	test-lock-session-return-session \
+	test-lock-seat-console-kit \
+	test-lock-seat-return-session-console-kit \
+	test-switch-to-greeter \
+	test-switch-to-greeter-new-session \
+	test-switch-to-greeter-return-session \
+	test-switch-to-greeter-return-session-logout \
+	test-switch-to-guest \
+	test-switch-to-user \
+	test-switch-to-user-no-password \
+	test-switch-to-user-active \
+	test-switch-to-user-existing \
+	test-switch-to-user-existing-no-password \
+	test-switch-to-user-logout-active \
+	test-switch-to-user-logout-inactive \
+	test-switch-to-users \
+	test-vnc-login \
+	test-vnc-command \
+	test-vnc-dimensions \
+	test-vnc-open-file-descriptors \
+	test-xdmcp-client \
+	test-xdmcp-server-login \
+	test-no-accounts-service \
+	test-console-kit \
+	test-no-console-kit \
+	test-no-login1 \
+	test-no-console-kit-or-login1 \
+	test-gobject-power \
+	test-gobject-power-no-console-kit \
+	test-gobject-power-no-login1 \
+	test-gobject-power-no-services \
+	test-open-file-descriptors \
+	test-xdmcp-server-open-file-descriptors \
+	test-mir-autologin \
+	test-mir-greeter \
+	test-mir-session \
+	test-unity-compositor-command \
+	test-unity-compositor-fail-start \
+	test-unity-compositor-fail-ready \
+	test-unity-compositor-next-session \
+	test-unity-compositor-mir-next-session \
+	test-unity-autologin \
+	test-unity-login \
+	test-unity-switch \
+	test-unity-plymouth \
+	test-unity-mir-autologin \
+	test-unity-mir-greeter-x-session \
+	test-unity-mir-greeter-mir-session \
+	test-unity-mir-session-x-greeter \
+	test-unity-xdg-seat \
+	test-surfaceflinger-autologin
+
+#	test-session-exit-error
+#	test-greeter-no-exit
+#   test-gobject-change-password
+#   test-qt-change-password
+#   test-autologin-create-directory
+
+TESTS += \
+	test-python-cancel-authentication \
+	test-users-python \
 	test-login-python \
 	test-login-python-manual \
 	test-login-python-manual-previous-session \
@@ -98,73 +195,20 @@ TESTS = \
 	test-login-python-invalid-session \
 	test-login-python-logout \
 	test-login-python-pick-session \
+	test-login-python-remember-session \
+	test-login-python-manual-remember-session \
 	test-login-python-guest \
 	test-login-python-guest-disabled \
 	test-login-python-guest-no-setup-script \
 	test-login-python-guest-fail-setup-script \
 	test-login-python-guest-logout \
 	test-login-python-remote-session \
-	test-login-session-crash \
-	test-login-xserver-crash \
-	test-home-dir-on-authenticate \
-	test-home-dir-on-session \
-	test-plymouth-active-vt \
-	test-plymouth-inactive-vt \
-	test-plymouth-no-seat \
-	test-script-hooks \
-	test-script-hook-fail-display-setup \
-	test-script-hook-fail-greeter-setup \
-	test-script-hook-fail-session-setup \
-	test-lock-seat \
-	test-lock-seat-return-session \
-	test-lock-session \
-	test-lock-session-no-password \
-	test-lock-session-return-session \
-	test-switch-to-greeter \
-	test-switch-to-greeter-new-session \
-	test-switch-to-greeter-new-session-logout-new \
-	test-switch-to-greeter-new-session-logout-old \
-	test-switch-to-greeter-return-session \
-	test-switch-to-greeter-return-session-logout \
-	test-switch-to-guest \
-	test-switch-to-user \
-	test-switch-to-users \
-	test-switch-to-user-existing-session \
-	test-switch-to-user-no-password \
-	test-switch-to-user-logout \
-	test-vnc-login \
-	test-vnc-command \
-	test-vnc-dimensions \
-	test-vnc-open-file-descriptors \
-	test-xdmcp-login \
-	test-no-accounts-service \
-	test-console-kit \
-	test-no-console-kit \
-	test-login1 \
-	test-no-login1 \
-	test-no-console-kit-or-login1 \
-	test-gobject-power \
-	test-gobject-power-no-console-kit \
-	test-gobject-power-no-login1 \
-	test-gobject-power-no-services \
+	test-autologin-python-timeout \
+	test-autologin-python-guest-timeout \
 	test-python-power \
 	test-python-power-no-console-kit \
 	test-python-power-no-login1 \
-	test-python-power-no-services \
-	test-open-file-descriptors \
-	test-xdmcp-open-file-descriptors \
-	test-unity-compositor-command \
-	test-unity-compositor-fail-start \
-	test-unity-compositor-fail-ready \
-	test-unity-autologin \
-	test-unity-login \
-	test-unity-switch
-
-#	test-session-exit-error
-#	test-greeter-no-exit
-#   test-gobject-change-password
-#   test-qt-change-password
-#   test-autologin-create-directory
+	test-python-power-no-services
 
 if COMPILE_LIBLIGHTDM_QT4
 TESTS += \
@@ -187,6 +231,8 @@ TESTS += \
 	test-login-qt4-invalid-session \
 	test-login-qt4-logout \
 	test-login-qt4-pick-session \
+	test-login-qt4-remember-session \
+	test-login-qt4-manual-remember-session \
 	test-login-qt4-guest \
 	test-login-qt4-guest-disabled \
 	test-login-qt4-guest-no-setup-script \
@@ -221,6 +267,8 @@ TESTS += \
 	test-login-qt5-invalid-session \
 	test-login-qt5-logout \
 	test-login-qt5-pick-session \
+	test-login-qt5-remember-session \
+	test-login-qt5-manual-remember-session \
 	test-login-qt5-guest \
 	test-login-qt5-guest-disabled \
 	test-login-qt5-guest-no-setup-script \
@@ -239,21 +287,29 @@ EXTRA_DIST = \
 	data/remote-sessions/test-remote.desktop \
 	data/system.conf \
 	data/session.conf \
-	data/xgreeters/test-gobject-greeter.desktop \
-	data/xgreeters/test-python-greeter.desktop \
-	data/xgreeters/test-qt4-greeter.desktop \
-	data/xgreeters/test-qt5-greeter.desktop \
-	data/xsessions/alternative.desktop \
-	data/xsessions/default.desktop \
+	data/greeters/test-gobject-greeter.desktop \
+	data/greeters/test-mir-greeter.desktop \
+	data/greeters/test-python-greeter.desktop \
+	data/greeters/test-qt4-greeter.desktop \
+	data/greeters/test-qt5-greeter.desktop \
+	data/sessions/alternative.desktop \
+	data/sessions/default.desktop \
+	data/sessions/mir.desktop \
+	data/sessions/named.desktop \
+	data/sessions/surfaceflinger.desktop \
 	scripts/0-additional.conf \
 	scripts/1-additional.conf \
 	scripts/additional-config.conf \
+	scripts/additional-config-priority.conf \
+	scripts/additional-system-config.conf \
+	scripts/additional-system-config-priority.conf \
 	scripts/autologin.conf \
 	scripts/autologin-guest.conf \
 	scripts/autologin-guest-fail-setup-script.conf \
 	scripts/autologin-guest-logout.conf \
 	scripts/autologin-guest-timeout.conf \
 	scripts/autologin-in-background.conf \
+	scripts/autologin-invalid-greeter.conf \
 	scripts/autologin-guest-in-background.conf \
 	scripts/autologin-timeout-in-background.conf \
 	scripts/autologin-invalid-session.conf \
@@ -269,29 +325,38 @@ EXTRA_DIST = \
 	scripts/change-authentication.conf \
 	scripts/cancel-authentication.conf \
 	scripts/console-kit.conf \
+	scripts/corrupt-xauthority.conf \
 	scripts/crash-authenticate.conf \
 	scripts/cred-error.conf \
 	scripts/cred-expired.conf \
 	scripts/cred-unavail.conf \
+	scripts/dbus.conf \
 	scripts/denied.conf \
 	scripts/expired.conf \
+	scripts/greeter-allow-guest.conf \
+	scripts/greeter-default-session.conf \
 	scripts/greeter-fail-start.conf \
+	scripts/greeter-hide-users.conf \
 	scripts/greeter-not-installed.conf \
+	scripts/greeter-show-manual-login.conf \
+	scripts/greeter-show-remote-login.conf \
 	scripts/greeter-wrapper.conf \
 	scripts/greeter-xserver-crash.conf \
 	scripts/group-membership.conf \
+	scripts/guest-wrapper.conf \
 	scripts/headless.conf \
 	scripts/home-dir-on-authenticate.conf \
 	scripts/home-dir-on-session.conf \
-	scripts/keyboard-layout.conf \
 	scripts/language.conf \
+	scripts/language-env.conf \
 	scripts/language-no-accounts-service.conf \
 	scripts/lock-seat.conf \
+	scripts/lock-seat-console-kit.conf \    
 	scripts/lock-seat-return-session.conf \
+	scripts/lock-seat-return-session-console-kit.conf \
 	scripts/lock-session.conf \
 	scripts/lock-session-no-password.conf \
 	scripts/lock-session-return-session.conf \
-	scripts/login1.conf \
 	scripts/login.conf \
 	scripts/login-crash-authenticate.conf \
 	scripts/login-guest.conf \
@@ -300,6 +365,7 @@ EXTRA_DIST = \
 	scripts/login-guest-logout.conf \
 	scripts/login-guest-no-setup-script.conf \
 	scripts/login-info-prompt.conf \
+	scripts/login-invalid-greeter.conf \
 	scripts/login-invalid-session.conf \
 	scripts/login-invalid-user.conf \
 	scripts/login-logout.conf \
@@ -307,6 +373,7 @@ EXTRA_DIST = \
 	scripts/login-long-password.conf \
 	scripts/login-manual.conf \
 	scripts/login-manual-previous-session.conf \
+	scripts/login-manual-remember-session.conf \
 	scripts/login-multi-info-prompt.conf \
 	scripts/login-multi-prompt.conf \
 	scripts/login-new-authtok.conf \
@@ -314,17 +381,19 @@ EXTRA_DIST = \
 	scripts/login-pam.conf \
 	scripts/login-pick-session.conf \
 	scripts/login-previous-session.conf \
+	scripts/login-remember-session.conf \
 	scripts/login-remote-session.conf \
 	scripts/login-session-crash.conf \
 	scripts/login-two-factor.conf \
 	scripts/login-wrong-password.conf \
 	scripts/login-xserver-crash.conf \
+	scripts/mir-autologin.conf \
+	scripts/mir-greeter.conf \
+	scripts/mir-session.conf \
 	scripts/no-accounts-service.conf \
 	scripts/no-config.conf \
 	scripts/no-console-kit.conf \
 	scripts/no-console-kit-or-login1.conf \
-	scripts/no-keyboard-layout.conf \
-	scripts/no-language.conf \
 	scripts/no-login1.conf \
 	scripts/open-file-descriptors.conf \
 	scripts/pam.conf \
@@ -344,34 +413,57 @@ EXTRA_DIST = \
 	scripts/session-stderr.conf \
 	scripts/session-stderr-multi-write.conf \
 	scripts/session-stderr-backup.conf \
+	scripts/surfaceflinger-autologin.conf \
 	scripts/switch-to-greeter.conf \
 	scripts/switch-to-greeter-new-session.conf \
-	scripts/switch-to-greeter-new-session-logout-new.conf \
-	scripts/switch-to-greeter-new-session-logout-old.conf \
 	scripts/switch-to-greeter-return-session.conf \
 	scripts/switch-to-greeter-return-session-logout.conf \
 	scripts/switch-to-guest.conf \
 	scripts/switch-to-user.conf \
 	scripts/switch-to-users.conf \
-	scripts/switch-to-user-existing-session.conf \
-	scripts/switch-to-user-logout.conf \
+	scripts/switch-to-user-active.conf \
+	scripts/switch-to-user-existing.conf \
+	scripts/switch-to-user-existing-no-password.conf \
+	scripts/switch-to-user-logout-active.conf \
+	scripts/switch-to-user-logout-inactive.conf \
 	scripts/switch-to-user-no-password.conf \
 	scripts/system-xauthority.conf \
 	scripts/unity-autologin.conf \
 	scripts/unity-compositor-command.conf \
 	scripts/unity-compositor-fail-ready.conf \
 	scripts/unity-compositor-fail-start.conf \
+	scripts/unity-compositor-mir-next-session.conf \
+	scripts/unity-compositor-next-session.conf \
 	scripts/unity-login.conf \
+	scripts/unity-mir-autologin.conf \
+	scripts/unity-mir-greeter-mir-session.conf \
+	scripts/unity-mir-greeter-x-session.conf \
+	scripts/unity-mir-session-x-greeter.conf \
+	scripts/unity-plymouth.conf \
 	scripts/unity-switch.conf \
+	scripts/unity-xdg-seat.conf \
+	scripts/upstart-autologin.conf \
+	scripts/upstart-login.conf \
 	scripts/users.conf \
+	scripts/user-background.conf \
+	scripts/user-has-messages.conf \
+	scripts/user-image.conf \
+	scripts/user-layout.conf \
+	scripts/user-logged-in.conf \
+	scripts/user-name.conf \
 	scripts/util-path.conf \
 	scripts/user-renamed.conf \
 	scripts/user-renamed-invalid.conf \
+	scripts/user-session.conf \
 	scripts/vnc-command.conf \
 	scripts/vnc-dimensions.conf \
 	scripts/vnc-login.conf \
 	scripts/vnc-open-file-descriptors.conf \
 	scripts/xauthority.conf \
-	scripts/xdmcp-login.conf \
-	scripts/xdmcp-open-file-descriptors.conf \
-	scripts/xserver-fail-start.conf
+	scripts/xdg-current-desktop.conf \
+	scripts/xdg-seat.conf \
+	scripts/xdmcp-client.conf \
+	scripts/xdmcp-server-login.conf \
+	scripts/xdmcp-server-open-file-descriptors.conf \
+	scripts/xserver-fail-start.conf \
+	scripts/xserver-no-share.conf

@@ -13,8 +13,11 @@
 #define SEAT_H_
 
 #include <glib-object.h>
-#include "display.h"
+#include "display-server.h"
+#include "greeter.h"
+#include "session.h"
 #include "process.h"
+#include "logger.h"
 
 G_BEGIN_DECLS
 
@@ -35,17 +38,22 @@ typedef struct
 {
     GObjectClass parent_class;
 
-    void (*setup)(Seat *seat);    
+    gboolean (*get_start_local_sessions) (Seat *seat);
+    void (*setup)(Seat *seat);
     gboolean (*start)(Seat *seat);
-    DisplayServer *(*create_display_server) (Seat *seat);
-    Session *(*create_session) (Seat *seat, Display *display);
-    void (*set_active_display)(Seat *seat, Display *display);
-    Display *(*get_active_display)(Seat *seat);
-    void (*run_script)(Seat *seat, Display *display, Process *script);
+    DisplayServer *(*create_display_server) (Seat *seat, const gchar *session_type);
+    gboolean (*display_server_supports_session_type) (Seat *seat, DisplayServer *display_server, const gchar *session_type);
+    Greeter *(*create_greeter_session) (Seat *seat);
+    Session *(*create_session) (Seat *seat);
+    void (*set_active_session)(Seat *seat, Session *session);
+    void (*set_next_session)(Seat *seat, Session *session);
+    Session *(*get_active_session)(Seat *seat);
+    void (*run_script)(Seat *seat, DisplayServer *display_server, Process *script);
     void (*stop)(Seat *seat);
 
-    void (*display_added)(Seat *seat, Display *display);
-    void (*display_removed)(Seat *seat, Display *display);
+    void (*session_added)(Seat *seat, Session *session);
+    void (*running_user_session)(Seat *seat, Session *session);
+    void (*session_removed)(Seat *seat, Session *session);
     void (*stopped)(Seat *seat);
 } SeatClass;
 
@@ -57,8 +65,6 @@ Seat *seat_new (const gchar *module_name);
 
 void seat_set_property (Seat *seat, const gchar *name, const gchar *value);
 
-gboolean seat_has_property (Seat *seat, const gchar *name);
-
 const gchar *seat_get_string_property (Seat *seat, const gchar *name);
 
 gboolean seat_get_boolean_property (Seat *seat, const gchar *name);
@@ -67,13 +73,17 @@ gint seat_get_integer_property (Seat *seat, const gchar *name);
 
 void seat_set_can_switch (Seat *seat, gboolean can_switch);
 
+void seat_set_share_display_server (Seat *seat, gboolean share_display_server);
+
 gboolean seat_start (Seat *seat);
 
-GList *seat_get_displays (Seat *seat);
+GList *seat_get_sessions (Seat *seat);
 
-void seat_set_active_display (Seat *seat, Display *display);
+void seat_set_active_session (Seat *seat, Session *session);
 
-Display *seat_get_active_display (Seat *seat);
+Session *seat_get_active_session (Seat *seat);
+
+Session *seat_get_next_session (Seat *seat);
 
 gboolean seat_get_can_switch (Seat *seat);
 

@@ -3,10 +3,10 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <signal.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <glib-unix.h>
 
 #include "status.h"
 #include "x-server.h"
@@ -58,32 +58,27 @@ quit (int status)
     g_main_loop_quit (loop);
 }
 
-static void
-indicate_ready (void)
+static gboolean
+sighup_cb (gpointer user_data)
 {
-    void *handler;  
-    handler = signal (SIGUSR1, SIG_IGN);
-    if (handler == SIG_IGN)
-    {
-        status_notify ("XSERVER-%d INDICATE-READY", display_number);
-        kill (getppid (), SIGUSR1);
-    }
-    signal (SIGUSR1, handler);
+    status_notify ("XSERVER-%d DISCONNECT-CLIENTS", display_number);
+    return TRUE;
 }
 
-static void
-signal_cb (int signum)
+static gboolean
+sigint_cb (gpointer user_data)
 {
-    if (signum == SIGHUP)
-    {
-        status_notify ("XSERVER-%d DISCONNECT-CLIENTS", display_number);
-        indicate_ready ();
-    }
-    else
-    {
-        status_notify ("XSERVER-%d TERMINATE SIGNAL=%d", display_number, signum);
-        quit (EXIT_SUCCESS);
-    }
+    status_notify ("XSERVER-%d TERMINATE SIGNAL=%d", display_number, SIGINT);
+    quit (EXIT_SUCCESS);
+    return TRUE;
+}
+
+static gboolean
+sigterm_cb (gpointer user_data)
+{
+    status_notify ("XSERVER-%d TERMINATE SIGNAL=%d", display_number, SIGTERM);
+    quit (EXIT_SUCCESS);
+    return TRUE;
 }
 
 static void
@@ -151,23 +146,14 @@ xdmcp_failed_cb (XDMCPClient *client, XDMCPFailed *message)
 static void
 client_connected_cb (XServer *server, XClient *client)
 {
-    gchar *auth_error = NULL;
-
     status_notify ("XSERVER-%d ACCEPT-CONNECT", display_number);
-
-    if (auth_error)
-        x_client_send_failed (client, auth_error);
-    else
-        x_client_send_success (client);
-    g_free (auth_error);
+    x_client_send_success (client);
 }
 
 static void
 client_disconnected_cb (XServer *server, XClient *client)
 {  
     g_signal_handlers_disconnect_matched (client, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, NULL);  
-    if (x_server_get_n_clients (server) == 0)
-        indicate_ready ();
 }
 
 static void
@@ -188,6 +174,27 @@ request_cb (const gchar *request)
         kill (getpid (), SIGSEGV);
     }
     g_free (r);
+    r = g_strdup_printf ("XSERVER-%d INDICATE-READY", display_number);
+    if (strcmp (request, r) == 0)
+    {
+        void *handler;
+
+        handler = signal (SIGUSR1, SIG_IGN);
+        if (handler == SIG_IGN)
+        {
+            status_notify ("XSERVER-%d INDICATE-READY", display_number);
+            kill (getppid (), SIGUSR1);
+        }
+        signal (SIGUSR1, handler);
+    }
+    g_free (r);
+    r = g_strdup_printf ("XSERVER-%d START-XDMCP", display_number);
+    if (strcmp (request, r) == 0)
+    {
+        if (!xdmcp_client_start (xdmcp_client))
+            quit (EXIT_FAILURE);
+    }
+    g_free (r);
 }
 
 int
@@ -198,20 +205,21 @@ main (int argc, char **argv)
     gboolean do_xdmcp = FALSE;
     guint xdmcp_port = 0;
     gchar *xdmcp_host = NULL;
+    gchar *seat = NULL;
     gchar *mir_id = NULL;
     gchar *lock_filename;
     int lock_file;
     GString *status_text;
-
-    signal (SIGINT, signal_cb);
-    signal (SIGTERM, signal_cb);
-    signal (SIGHUP, signal_cb);
 
 #if !defined(GLIB_VERSION_2_36)
     g_type_init ();
 #endif
 
     loop = g_main_loop_new (NULL, FALSE);
+
+    g_unix_signal_add (SIGINT, sigint_cb, NULL);
+    g_unix_signal_add (SIGTERM, sigterm_cb, NULL);
+    g_unix_signal_add (SIGHUP, sighup_cb, NULL);
 
     status_connect (request_cb);
 
@@ -268,6 +276,11 @@ main (int argc, char **argv)
         {
             /* Ignore VT args */
         }
+        else if (strcmp (arg, "-seat") == 0)
+        {
+            seat = argv[i+1];
+            i++;
+        }
         else if (strcmp (arg, "-mir") == 0)
         {
             mir_id = argv[i+1];
@@ -289,6 +302,7 @@ main (int argc, char **argv)
                         "-query host-name       Contact named host for XDMCP\n"
                         "-broadcast             Broadcast for XDMCP\n"
                         "-port port-num         UDP port number to send messages to\n"
+                        "-seat string           seat to run on\n"
                         "-mir id                Mir ID to use\n"
                         "-mirSocket name        Mir socket to use\n"
                         "vtxx                   Use virtual terminal xx instead of the next available\n",
@@ -305,6 +319,8 @@ main (int argc, char **argv)
     g_string_printf (status_text, "XSERVER-%d START", display_number);
     if (vt_number >= 0)
         g_string_append_printf (status_text, " VT=%d", vt_number);
+    if (seat != NULL)
+        g_string_append_printf (status_text, " SEAT=%s", seat);
     if (mir_id != NULL)
         g_string_append_printf (status_text, " MIR-ID=%s", mir_id);
     status_notify (status_text->str);
@@ -371,18 +387,18 @@ main (int argc, char **argv)
                  "	and start again.\n", display_number, lock_path);
         g_free (lock_path);
         lock_path = NULL;
-        quit (EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
     pid_string = g_strdup_printf ("%10ld", (long) getpid ());
     if (write (lock_file, pid_string, strlen (pid_string)) < 0)
     {
         g_warning ("Error writing PID file: %s", strerror (errno));
-        quit (EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
     g_free (pid_string);
 
     if (!x_server_start (xserver))
-        quit (EXIT_FAILURE);
+        return EXIT_FAILURE;
 
     /* Enable XDMCP */
     if (do_xdmcp)
@@ -397,13 +413,7 @@ main (int argc, char **argv)
         g_signal_connect (xdmcp_client, "accept", G_CALLBACK (xdmcp_accept_cb), NULL);
         g_signal_connect (xdmcp_client, "decline", G_CALLBACK (xdmcp_decline_cb), NULL);
         g_signal_connect (xdmcp_client, "failed", G_CALLBACK (xdmcp_failed_cb), NULL);
-
-        if (!xdmcp_client_start (xdmcp_client))
-            quit (EXIT_FAILURE);
     }
-
-    /* Indicate ready if parent process has requested it */
-    indicate_ready ();
 
     g_main_loop_run (loop);
 

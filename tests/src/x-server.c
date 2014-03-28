@@ -54,7 +54,9 @@ x_client_send_failed (XClient *client, const gchar *reason)
     gchar *message;
   
     message = g_strdup_printf ("FAILED:%s", reason);
-    send (g_io_channel_unix_get_fd (client->priv->channel), message, strlen (message), 0);
+    errno = 0;
+    if (send (g_io_channel_unix_get_fd (client->priv->channel), message, strlen (message), 0) != strlen (message))
+        g_printerr ("Failed to send FAILED: %s\n", strerror (errno));
     g_free (message);
 }
 
@@ -64,7 +66,9 @@ x_client_send_success (XClient *client)
     gchar *message;
 
     message = g_strdup ("SUCCESS");
-    send (g_io_channel_unix_get_fd (client->priv->channel), message, strlen (message), 0);
+    errno = 0;
+    if (send (g_io_channel_unix_get_fd (client->priv->channel), message, strlen (message), 0) != strlen (message))
+        g_printerr ("Failed to send SUCCESS: %s\n", strerror (errno));
     g_free (message);
 }
 
@@ -91,7 +95,7 @@ x_client_class_init (XClientClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (XClientClass, disconnected),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__VOID,
+                      NULL,
                       G_TYPE_NONE, 0);
 }
 
@@ -196,7 +200,7 @@ x_server_class_init (XServerClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (XServerClass, client_connected),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__OBJECT,
+                      NULL,
                       G_TYPE_NONE, 1, x_client_get_type ());
     x_server_signals[X_SERVER_CLIENT_DISCONNECTED] =
         g_signal_new ("client-disconnected",
@@ -204,6 +208,6 @@ x_server_class_init (XServerClass *klass)
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (XServerClass, client_disconnected),
                       NULL, NULL,
-                      g_cclosure_marshal_VOID__OBJECT,
+                      NULL,
                       G_TYPE_NONE, 1, x_client_get_type ());
 }
