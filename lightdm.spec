@@ -186,7 +186,7 @@ echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_envi
 %config(noreplace) %_sysconfdir/%name/*.conf
 %config(noreplace) %_sysconfdir/pam.d/%{name}*
 %_sbindir/%name
-%_man1dir/%{name}*
+%_man1dir/*
 %_bindir/dm-tool
 %_libexecdir/*
 %attr(775,root,_ldm) %dir %_localstatedir/log/%name
