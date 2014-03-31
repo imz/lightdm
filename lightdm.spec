@@ -24,7 +24,7 @@ Source8: %name.rules
 
 Patch1: %name-%version-%release.patch
 
-Requires: %name-greeter
+# Requires: %name-greeter
 # Requires: accountsservice
 Requires: dbus-tools-gui
 
