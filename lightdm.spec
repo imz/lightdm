@@ -169,7 +169,7 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
 install -Dpm 644 %SOURCE6 %buildroot/lib/tmpfiles.d/lightdm.conf
 install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
-echo "GDK_CORE_DEVICE_EVENTS=true" > %_localstatedir/lib/ldm/.pam_environment
+echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_environment
 
 %find_lang --with-gnome %name
 
