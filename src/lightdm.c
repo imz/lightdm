@@ -30,6 +30,8 @@
 #include "x-server.h"
 #include "process.h"
 #include "session-child.h"
+#include "shared-data-manager.h"
+#include "user-list.h"
 
 static gchar *config_path = NULL;
 static GMainLoop *loop = NULL;
@@ -42,7 +44,7 @@ static XDMCPServer *xdmcp_server = NULL;
 static VNCServer *vnc_server = NULL;
 static guint bus_id = 0;
 static GDBusConnection *bus = NULL;
-static guint bus_id;
+static guint reg_id = 0;
 static GDBusNodeInfo *seat_info;
 static GHashTable *seat_bus_entries = NULL;
 static guint seat_index = 0;
@@ -139,6 +141,34 @@ log_init (void)
 }
 
 static void
+set_seat_properties (Seat *seat, const gchar *config_section)
+{
+    gchar **keys;
+    gint i;
+
+    keys = config_get_keys (config_get_instance (), "SeatDefaults");
+    for (i = 0; keys[i]; i++)
+    {
+        gchar *value = config_get_string (config_get_instance (), "SeatDefaults", keys[i]);
+        seat_set_property (seat, keys[i], value);
+        g_free (value);
+    }
+    g_strfreev (keys);
+
+    if (config_section)
+    {
+        keys = config_get_keys (config_get_instance (), config_section);
+        for (i = 0; keys[i]; i++)
+        {
+            gchar *value = config_get_string (config_get_instance (), config_section, keys[i]);
+            seat_set_property (seat, keys[i], value);
+            g_free (value);
+        }
+        g_strfreev (keys);
+    }
+}
+
+static void
 signal_cb (Process *process, int signum)
 {
     g_debug ("Caught %s signal, shutting down", g_strsignal (signum));
@@ -156,12 +186,62 @@ display_manager_stopped_cb (DisplayManager *display_manager)
 static void
 display_manager_seat_removed_cb (DisplayManager *display_manager, Seat *seat)
 {
-    if (seat_get_boolean_property (seat, "exit-on-failure"))
+    gchar **types;
+    gchar **iter;
+    Seat *next_seat = NULL;
+    GString *next_types;
+
+    /* If we have fallback types registered for the seat, let's try them
+       before giving up. */
+    types = seat_get_string_list_property (seat, "type");
+    next_types = g_string_new ("");
+    for (iter = types; iter && *iter; iter++)
+    {
+        if (iter == types)
+            continue; // skip first one, that is our current seat type
+
+        if (!next_seat)
+        {
+            next_seat = seat_new (*iter);
+            g_string_assign (next_types, *iter);
+        }
+        else
+        {
+            // Build up list of types to try next time
+            g_string_append_c (next_types, ';');
+            g_string_append (next_types, *iter);
+        }
+    }
+    g_strfreev (types);
+
+    if (next_seat)
+    {
+        const gchar *seat_name;
+        gchar *config_section = NULL;
+
+        seat_name = seat_get_string_property (seat, "seat-name");
+        if (seat_name)
+            config_section = g_strdup_printf ("Seat:%s", seat_name);
+        set_seat_properties (next_seat, config_section);
+        g_free (config_section);
+
+        // We set this manually on default seat.  Let's port it over if needed.
+        if (seat_get_boolean_property (seat, "exit-on-failure"))
+            seat_set_property (next_seat, "exit-on-failure", "true");
+
+        seat_set_property (next_seat, "type", next_types->str);
+
+        display_manager_add_seat (display_manager, next_seat);
+        g_object_unref (next_seat);
+    }
+    else if (seat_get_boolean_property (seat, "exit-on-failure"))
     {
         g_debug ("Required seat has stopped");
         exit_code = EXIT_FAILURE;
         display_manager_stop (display_manager);
     }
+
+    g_string_free (next_types, TRUE);
 }
 
 static GVariant *
@@ -209,34 +289,6 @@ handle_display_manager_get_property (GDBusConnection       *connection,
     }
 
     return result;
-}
-
-static void
-set_seat_properties (Seat *seat, const gchar *config_section)
-{
-    gchar **keys;
-    gint i;
-
-    keys = config_get_keys (config_get_instance (), "SeatDefaults");
-    for (i = 0; keys[i]; i++)
-    {
-        gchar *value = config_get_string (config_get_instance (), "SeatDefaults", keys[i]);
-        seat_set_property (seat, keys[i], value);
-        g_free (value);
-    }
-    g_strfreev (keys);
-
-    if (config_section)
-    {
-        keys = config_get_keys (config_get_instance (), config_section);
-        for (i = 0; keys[i]; i++)
-        {
-            gchar *value = config_get_string (config_get_instance (), config_section, keys[i]);
-            seat_set_property (seat, keys[i], value);
-            g_free (value);
-        }
-        g_strfreev (keys);
-    }
 }
 
 static void
@@ -737,13 +789,13 @@ bus_acquired_cb (GDBusConnection *connection,
     session_info = g_dbus_node_info_new_for_xml (session_interface, NULL);
     g_assert (session_info != NULL);
 
-    bus_id = g_dbus_connection_register_object (connection,
+    reg_id = g_dbus_connection_register_object (connection,
                                                 "/org/freedesktop/DisplayManager",
                                                 display_manager_info->interfaces[0],
                                                 &display_manager_vtable,
                                                 NULL, NULL,
                                                 &error);
-    if (bus_id == 0)
+    if (reg_id == 0)
         g_warning ("Failed to register display manager: %s", error->message);
     g_clear_error (&error);
     g_dbus_node_info_unref (display_manager_info);
@@ -851,73 +903,6 @@ name_lost_cb (GDBusConnection *connection,
     exit (EXIT_FAILURE);
 }
 
-static gchar *
-path_make_absolute (gchar *path)
-{
-    gchar *cwd, *abs_path;
-
-    if (!path)
-        return NULL;
-
-    if (g_path_is_absolute (path))
-        return path;
-
-    cwd = g_get_current_dir ();
-    abs_path = g_build_filename (cwd, path, NULL);
-    g_free (path);
-
-    return abs_path;
-}
-
-static int
-compare_strings (gconstpointer a, gconstpointer b)
-{
-    return strcmp (a, b);
-}
-
-static void
-load_config_directory (const gchar *path, GList **messages)
-{
-    GDir *dir;
-    GList *files = NULL, *link;
-    GError *error = NULL;
-
-    /* Find configuration files */
-    dir = g_dir_open (path, 0, &error);
-    if (error && !g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
-        g_printerr ("Failed to open configuration directory %s: %s\n", path, error->message);
-    g_clear_error (&error);
-    if (dir)
-    {
-        const gchar *name;
-        while ((name = g_dir_read_name (dir)))
-            files = g_list_append (files, g_strdup (name));
-        g_dir_close (dir);
-    }
-
-    /* Sort alphabetically and load onto existing configuration */
-    files = g_list_sort (files, compare_strings);
-    for (link = files; link; link = link->next)
-    {
-        gchar *filename = link->data;
-        gchar *conf_path;
-
-        conf_path = g_build_filename (path, filename, NULL);
-        if (g_str_has_suffix (filename, ".conf"))
-        {
-            *messages = g_list_append (*messages, g_strdup_printf ("Loading configuration from %s", conf_path));
-            config_load_from_file (config_get_instance (), conf_path, &error);
-            if (error && !g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
-                g_printerr ("Failed to load configuration from %s: %s\n", filename, error->message);
-            g_clear_error (&error);
-        }
-        else
-            g_debug ("Ignoring configuration file %s, it does not have .conf suffix", conf_path);
-        g_free (conf_path);
-    }
-    g_list_free_full (files, g_free);
-}
-
 int
 main (int argc, char **argv)
 {
@@ -926,10 +911,8 @@ main (int argc, char **argv)
     gboolean result;
     gchar **groups, **i, *dir;
     gint n_seats = 0;
-    gboolean explicit_config = FALSE;
     gboolean test_mode = FALSE;
     gchar *pid_path = "/var/run/lightdm.pid";
-    gchar *config_dir, *config_d_dir = NULL;
     gchar *log_dir = NULL;
     gchar *run_dir = NULL;
     gchar *cache_dir = NULL;
@@ -1006,21 +989,6 @@ main (int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
-    if (config_path)
-    {
-        config_dir = g_path_get_basename (config_path);
-        config_dir = path_make_absolute (config_dir);
-        explicit_config = TRUE;
-    }
-    else
-    {
-        config_dir = g_strdup (CONFIG_DIR);
-        config_d_dir = g_build_filename (config_dir, "lightdm.conf.d", NULL);
-        config_path = g_build_filename (config_dir, "lightdm.conf", NULL);
-    }
-    config_set_string (config_get_instance (), "LightDM", "config-directory", config_dir);
-    g_free (config_dir);
-
     if (!test_mode && getuid () != 0)
     {
         g_printerr ("Only root can run Light Display Manager.  To run as a regular user for testing run with the --test-mode flag.\n");
@@ -1075,25 +1043,8 @@ main (int argc, char **argv)
     }
 
     /* Load config file(s) */
-    load_config_directory (SYSTEM_CONFIG_DIR, &messages);
-    if (config_d_dir)
-        load_config_directory (config_d_dir, &messages);
-    g_free (config_d_dir);
-    messages = g_list_append (messages, g_strdup_printf ("Loading configuration from %s", config_path));
-    if (!config_load_from_file (config_get_instance (), config_path, &error))
-    {
-        gboolean is_empty;
-
-        is_empty = error && g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT);
-
-        if (explicit_config || !is_empty)
-        {
-            if (error)
-                g_printerr ("Failed to load configuration from %s: %s\n", config_path, error->message);
-            exit (EXIT_FAILURE);
-        }
-    }
-    g_clear_error (&error);
+    if (!config_load_from_standard_locations (config_get_instance (), config_path, &messages))
+        exit (EXIT_FAILURE);
     g_free (config_path);
 
     /* Set default values */
@@ -1196,24 +1147,32 @@ main (int argc, char **argv)
     g_signal_connect (display_manager, "stopped", G_CALLBACK (display_manager_stopped_cb), NULL);
     g_signal_connect (display_manager, "seat-removed", G_CALLBACK (display_manager_seat_removed_cb), NULL);
 
+    shared_data_manager_start (shared_data_manager_get_instance ());
+
     /* Load the static display entries */
     groups = config_get_groups (config_get_instance ());
     for (i = groups; *i; i++)
     {
         gchar *config_section = *i;
-        gchar *type;
-        Seat *seat;
+        gchar **types;
+        gchar **type;
+        Seat *seat = NULL;
         const gchar *const seatpfx = "Seat:";
 
         if (!g_str_has_prefix (config_section, seatpfx))
             continue;
 
         g_debug ("Loading seat %s", config_section);
-        type = config_get_string (config_get_instance (), config_section, "type");
-        if (!type)
-            type = config_get_string (config_get_instance (), "SeatDefaults", "type");
-        seat = seat_new (type);
-        g_free (type);
+        types = config_get_string_list (config_get_instance (), config_section, "type");
+        if (!types)
+            types = config_get_string_list (config_get_instance (), "SeatDefaults", "type");
+        for (type = types; type && *type; type++)
+        {
+            seat = seat_new (*type);
+            if (seat)
+                break;
+        }
+        g_strfreev (types);
         if (seat)
         {
             const gsize seatpfxlen = strlen(seatpfx);
@@ -1234,14 +1193,20 @@ main (int argc, char **argv)
     /* If no seats start a default one */
     if (n_seats == 0 && config_get_boolean (config_get_instance (), "LightDM", "start-default-seat"))
     {
-        gchar *type;
-        Seat *seat;
+        gchar **types;
+        gchar **type;
+        Seat *seat = NULL;
 
         g_debug ("Adding default seat");
 
-        type = config_get_string (config_get_instance (), "SeatDefaults", "type");
-        seat = seat_new (type);
-        g_free (type);
+        types = config_get_string_list (config_get_instance (), "SeatDefaults", "type");
+        for (type = types; type && *type; type++)
+        {
+            seat = seat_new (*type);
+            if (seat)
+                break;
+        }
+        g_strfreev (types);
         if (seat)
         {
             set_seat_properties (seat, NULL);
@@ -1252,18 +1217,25 @@ main (int argc, char **argv)
         }
         else
         {
-            g_warning ("Failed to create default seat %s", type);
+            g_warning ("Failed to create default seat");
             return EXIT_FAILURE;
         }
     }
 
     g_main_loop_run (loop);
 
+    /* Clean up shared data manager */
+    shared_data_manager_cleanup ();
+
+    /* Clean up user list */
+    common_user_list_cleanup ();
+
     /* Clean up display manager */
     g_object_unref (display_manager);
     display_manager = NULL;
 
     /* Remove D-Bus interface */
+    g_dbus_connection_unregister_object (bus, reg_id);
     g_bus_unown_name (bus_id);
     if (seat_bus_entries)
         g_hash_table_unref (seat_bus_entries);

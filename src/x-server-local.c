@@ -27,9 +27,6 @@ struct XServerLocalPrivate
 {
     /* X server process */
     Process *x_server_process;
-  
-    /* File to log to */
-    gchar *log_file;    
 
     /* Command to run the X server */
     gchar *command;
@@ -140,7 +137,7 @@ x_server_local_release_display_number (guint display_number)
         guint number = GPOINTER_TO_UINT (link->data);
         if (number == display_number)
         {
-            display_numbers = g_list_remove_link (display_numbers, link);
+            display_numbers = g_list_delete_link (display_numbers, link);
             return;
         }
     }
@@ -149,15 +146,20 @@ x_server_local_release_display_number (guint display_number)
 XServerLocal *
 x_server_local_new (void)
 {
-    XServerLocal *self = g_object_new (X_SERVER_LOCAL_TYPE, NULL);
+    XServerLocal *self;
     gchar hostname[1024], *number, *name;
+    XAuthority *cookie;
+
+    self = g_object_new (X_SERVER_LOCAL_TYPE, NULL);
 
     x_server_set_display_number (X_SERVER (self), x_server_local_get_unused_display_number ());
 
     gethostname (hostname, 1024);
     number = g_strdup_printf ("%d", x_server_get_display_number (X_SERVER (self)));
-    x_server_set_authority (X_SERVER (self), x_authority_new_cookie (XAUTH_FAMILY_LOCAL, (guint8*) hostname, strlen (hostname), number));
+    cookie = x_authority_new_cookie (XAUTH_FAMILY_LOCAL, (guint8*) hostname, strlen (hostname), number);
+    x_server_set_authority (X_SERVER (self), cookie);
     g_free (number);
+    g_object_unref (cookie);
 
     name = g_strdup_printf ("x-%d", x_server_get_display_number (X_SERVER (self)));
     display_server_set_name (DISPLAY_SERVER (self), name);
@@ -178,7 +180,7 @@ void
 x_server_local_set_vt (XServerLocal *server, gint vt)
 {
     g_return_if_fail (server != NULL);
-    if (server->priv->vt > 0)
+    if (server->priv->have_vt_ref)
         vt_unref (server->priv->vt);
     server->priv->have_vt_ref = FALSE;
     server->priv->vt = vt;
@@ -326,7 +328,7 @@ get_absolute_command (const gchar *command)
 }
 
 static void
-run_cb (Process *process, XServerLocal *server)
+run_cb (Process *process, gpointer user_data)
 {
     int fd;
 
@@ -334,29 +336,6 @@ run_cb (Process *process, XServerLocal *server)
     fd = open ("/dev/null", O_RDONLY);
     dup2 (fd, STDIN_FILENO);
     close (fd);
-
-    /* Redirect output to logfile */
-    if (server->priv->log_file)
-    {
-         int fd;
-         gchar *old_filename;
-
-         /* Move old file out of the way */
-         old_filename = g_strdup_printf ("%s.old", server->priv->log_file);
-         rename (server->priv->log_file, old_filename);
-         g_free (old_filename);
-
-         /* Create new file and log to it */
-         fd = g_open (server->priv->log_file, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-         if (fd < 0)
-             l_warning (server, "Failed to open log file %s: %s", server->priv->log_file, g_strerror (errno));
-         else
-         {
-             dup2 (fd, STDOUT_FILENO);
-             dup2 (fd, STDERR_FILENO);
-             close (fd);
-         }
-    }
 
     /* Set SIGUSR1 to ignore so the X server can indicate it when it is ready */
     signal (SIGUSR1, SIG_IGN);
@@ -439,7 +418,7 @@ x_server_local_start (DisplayServer *display_server)
 {
     XServerLocal *server = X_SERVER_LOCAL (display_server);
     gboolean result;
-    gchar *filename, *dir, *absolute_command;
+    gchar *filename, *dir, *log_file, *absolute_command;
     GString *command;
 
     g_return_val_if_fail (server->priv->x_server_process == NULL, FALSE);
@@ -448,17 +427,18 @@ x_server_local_start (DisplayServer *display_server)
 
     g_return_val_if_fail (server->priv->command != NULL, FALSE);
 
-    server->priv->x_server_process = process_new ();
+    server->priv->x_server_process = process_new (run_cb, server);
     process_set_clear_environment (server->priv->x_server_process, TRUE);
-    g_signal_connect (server->priv->x_server_process, "run", G_CALLBACK (run_cb), server);
     g_signal_connect (server->priv->x_server_process, "got-signal", G_CALLBACK (got_signal_cb), server);
     g_signal_connect (server->priv->x_server_process, "stopped", G_CALLBACK (stopped_cb), server);
 
     /* Setup logging */
     filename = g_strdup_printf ("%s.log", display_server_get_name (display_server));
     dir = config_get_string (config_get_instance (), "LightDM", "log-directory");
-    server->priv->log_file = g_build_filename (dir, filename, NULL);
-    l_debug (display_server, "Logging to %s", server->priv->log_file);
+    log_file = g_build_filename (dir, filename, NULL);
+    process_set_log_file (server->priv->x_server_process, log_file, TRUE);
+    l_debug (display_server, "Logging to %s", log_file);
+    g_free (log_file);
     g_free (filename);
     g_free (dir);
 
@@ -577,16 +557,16 @@ x_server_local_finalize (GObject *object)
         g_signal_handlers_disconnect_matched (self->priv->x_server_process, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, self);
         g_object_unref (self->priv->x_server_process);
     }
-    g_free (self->priv->log_file);
     g_free (self->priv->command);
     g_free (self->priv->config_file);
     g_free (self->priv->layout);
+    g_free (self->priv->xdg_seat);
     g_free (self->priv->xdmcp_server);
     g_free (self->priv->xdmcp_key);
     g_free (self->priv->mir_id);
     g_free (self->priv->mir_socket);
     g_free (self->priv->authority_file);
-    if (self->priv->vt > 0)
+    if (self->priv->have_vt_ref)
         vt_unref (self->priv->vt);
     g_free (self->priv->background);
 

@@ -1,3 +1,162 @@
+lightdm (1.9.13-0ubuntu1) trusty; urgency=medium
+
+  * New upstream release:
+    - Handle not getting an X connection when attempting to get X layouts.
+      (LP: #1235915)
+    - Read config data from both XDG_DATA_DIRS and XDG_CONFIG_DIRS.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Tue, 25 Mar 2014 14:45:54 +1300
+
+lightdm (1.9.12-0ubuntu1) trusty; urgency=medium
+
+  [ Robert Ancell ]
+  * New upstream release:
+    - Ensure X authority is written before X server is started (LP: #1260220)
+    - Activate after unlocking a logind session
+
+  [ Gunnar Hjalmarsson ]
+  * debian/guest-account:
+    - Disable Unity shortcut hint. (LP: #1292178)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 17 Mar 2014 16:49:37 +1300
+
+lightdm (1.9.11-0ubuntu2) trusty; urgency=medium
+
+  * Rebuild against Qt 5.2.1.
+
+ -- Timo Jyrinki <timo-jyrinki@ubuntu.com>  Thu, 13 Mar 2014 07:41:22 +0200
+
+lightdm (1.9.11-0ubuntu1) trusty; urgency=medium
+
+  * New upstream release:
+    - Don't use g_hash_table_get_keys_as_array, it's a glib 2.40 feature
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Thu, 13 Mar 2014 13:42:04 +1300
+
+lightdm (1.9.10-0ubuntu1) trusty; urgency=medium
+
+  * New upstream release:
+    - Honour session type requested by greeter for guest sessions (LP: #1285132)
+    - Log to wtmp and btmp. (LP: #1027805)
+    - Implement guest-session config option
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Thu, 13 Mar 2014 11:50:38 +1300
+
+lightdm (1.9.9-0ubuntu1) trusty; urgency=medium
+
+  * New upstream release:
+    - Handle signals being received in child processes instead of treating them
+      like they are received in the daemon.
+    - Set utmp ut_line to the display name (i.e. :0) to match what other
+      programs expect (e.g. 'w').
+    - Fix lightdm_greeter_ensure_shared_data_dir_sync returning the wrong value.
+    - Fix shared data tests so you can run test suite without root again.
+    - Be extra careful not to call any non thread safe function after a fork.
+    - Fix some small memory leaks detected by valgrind.
+    - Fix process shutdown code to stop generating confusing warnings
+    - Fix more double removal of source IDs.
+    - Test improvements.
+
+  [ Gunnar Hjalmarsson ]
+  * debian/patches/04_language_handling.patch:
+    - Make lightdm_get_language() return a language with a short form language
+      code (LP: #1276072).
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Tue, 11 Mar 2014 09:17:15 +1300
+
+lightdm (1.9.8-0ubuntu1) trusty; urgency=medium
+
+  * New upstream release:
+    - Add support for shared user data directories between the greeter and user
+      sessions.
+    - Refactor LightDMUser and User classes to use the same code internally.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Thu, 20 Feb 2014 16:02:35 +1300
+
+lightdm (1.9.7-0ubuntu2) trusty; urgency=medium
+
+  * debian/lightdm.postinst: Guard the chown'ing of /var/lib/lightdm/, it
+    might fail on the .gvfs mount. (LP: #1279428)
+
+ -- Martin Pitt <martin.pitt@ubuntu.com>  Wed, 12 Feb 2014 18:15:55 +0100
+
+lightdm (1.9.7-0ubuntu1) trusty; urgency=medium
+
+  * New upstream release:
+    - Correctly invoke PAM to change authentication token. (LP: #1270118)
+    - Make xdg-seat a core property of a seat and always pass it to X servers.
+    - Qt bindings: properly hand over prompt and message type.
+    - Add warning flags where they are missing and fix the resulting warnings.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Fri, 07 Feb 2014 15:40:20 +0000
+
+lightdm (1.9.6-0ubuntu3) trusty; urgency=medium
+
+  [ Gunnar Hjalmarsson ]
+  * debian/guest-session-auto.sh:
+    - Export gettext variables.
+  * debian/guest-account:
+    - Chown $HOME after /etc/guest-session/prefs.sh has been sourced.
+  * debian/patches/05_translate_guest_session_dialog.patch:
+    - Make the translatable strings in debian/guest-session-auto.sh end up in
+      the PO files.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 05 Feb 2014 10:23:52 +0000
+
+lightdm (1.9.6-0ubuntu2) trusty; urgency=medium
+
+  * Clear default tty on lightdm shutdown, to avoid brief display of text
+    messages on shutdown. (LP: #967229)
+
+ -- Dimitri John Ledkov <xnox@ubuntu.com>  Tue, 04 Feb 2014 10:12:05 +0000
+
+lightdm (1.9.6-0ubuntu1) trusty; urgency=medium
+
+  * New upstream release:
+    - Support Mir sessions in xlocal seats by starting a unity system compositor
+      for each session.
+    - Add --screen and --fullscreen options to "dm-tool add-nested-seat"
+    - Don't try to compile liblightdm-qt if liblightdm-gobject will not be
+      compiled.
+    - Stop greeters warning if sessions directories not present or lightdm.conf
+      doesn't exist - this is valid.
+    - Fix log name for Mir display servers
+    - Fix double removal of source IDs
+  * debian/guest-account:
+  * debian/guest-session-auto.sh:
+  * debian/lightdm.install:
+  * debian/rules:
+    - Warn users about the temporary nature of a guest session. (LP: #435930)
+  * debian/lightdm.install:
+  * debian/lightdm.maintscript:
+    - Move configuration from /etc to /usr/share so dpkg doesn't keep it around.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 22 Jan 2014 15:51:29 +1300
+
+lightdm (1.9.5-0ubuntu1) trusty; urgency=low
+
+  * New upstream release:
+    - In the unity seat, if we don't have proper VT support, fake VT 0 instead
+      of a real VT number. This matches what logind expects.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Thu, 05 Dec 2013 09:35:42 +1300
+
+lightdm (1.9.4-0ubuntu1) trusty; urgency=low
+
+  * New upstream release:
+    - Fix issue where VTs are double used when switching sessions.
+      (LP: #1256150)
+    - Remove lightdm-set-defaults and gdmflexiserver.
+    - Add new ability to specify a list of seat types to try, rather than just
+      one.
+    - Allow Mir sessions in the surfaceflinger seat.
+    - Rename the guest session wrapper to have a simpler name.
+    - Make sure sessions are associated with the display server before starting
+      them.
+    - Add a dm-tool man page.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Tue, 03 Dec 2013 19:07:28 +1300
+
 lightdm (1.9.3-0ubuntu1) trusty; urgency=low
 
   * New upstream release:

@@ -1,18 +1,15 @@
 sbin_PROGRAMS = lightdm
+bin_PROGRAMS = dm-tool
 
 lightdm_SOURCES = \
 	accounts.c \
 	accounts.h \
-	configuration.c \
-	configuration.h \
 	console-kit.c \
 	console-kit.h \
 	display-manager.c \
 	display-manager.h \
 	display-server.c \
 	display-server.h \
-	dmrc.c \
-	dmrc.h \
 	greeter.c \
 	greeter.h \
 	guest-account.c \
@@ -26,8 +23,6 @@ lightdm_SOURCES = \
 	mir-server.h \
 	plymouth.c \
 	plymouth.h \
-	privileges.c \
-	privileges.h \
 	process.c \
 	process.h \
 	seat.c \
@@ -50,8 +45,12 @@ lightdm_SOURCES = \
 	session-child.h \
 	session-config.c \
 	session-config.h \
+	shared-data-manager.c \
+	shared-data-manager.h \
 	surfaceflinger-server.c \
 	surfaceflinger-server.h \
+	unity-system-compositor.c \
+	unity-system-compositor.h \
 	vnc-server.c \
 	vnc-server.h \
 	vt.c \
@@ -75,31 +74,42 @@ lightdm_SOURCES = \
 	xdmcp-session-private.h
 
 lightdm_CFLAGS = \
-	$(LIGHTDM_CFLAGS) \
 	$(WARN_CFLAGS) \
-	-DPKGLIBEXEC_DIR=\"$(pkglibexecdir)\" \
+	$(LIGHTDM_CFLAGS) \
+	-I"$(top_srcdir)/common" \
 	-DSBIN_DIR=\"$(sbindir)\" \
-	-DCONFIG_DIR=\"$(sysconfdir)/lightdm\" \
+	-DUSERS_DIR=\"$(localstatedir)/lib/lightdm-data\" \
 	-DLOG_DIR=\"$(localstatedir)/log/lightdm\" \
 	-DRUN_DIR=\"$(localstatedir)/run/lightdm\" \
 	-DCACHE_DIR=\"$(localstatedir)/cache/lightdm\" \
-	-DSYSTEM_CONFIG_DIR=\"$(pkgdatadir)/lightdm.conf.d\" \
-	-DSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions\" \
+	-DSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions:$(pkgdatadir)/sessions\" \
 	-DREMOTE_SESSIONS_DIR=\"$(pkgdatadir)/remote-sessions\" \
 	-DGREETERS_DIR=\"$(pkgdatadir)/greeters:$(datadir)/xgreeters\"
 
 lightdm_LDADD = \
 	$(LIGHTDM_LIBS) \
+	$(top_builddir)/common/libcommon.la \
 	-lgcrypt \
 	-lpam
 
-pkglibexec_PROGRAMS = lightdm-guest-session-wrapper
+dm_tool_SOURCES = \
+	dm-tool.c
 
-lightdm_guest_session_wrapper_SOURCES = lightdm-guest-session-wrapper.c
-
-lightdm_guest_session_wrapper_CFLAGS = \
+dm_tool_CFLAGS = \
+	$(WARN_CFLAGS) \
 	$(LIGHTDM_CFLAGS) \
-	$(WARN_CFLAGS)
+	-DLOCALE_DIR=\"$(datadir)/locale\"
+
+dm_tool_LDADD = \
+	$(LIGHTDM_LIBS)
+
+libexec_PROGRAMS = lightdm-guest-session
+
+lightdm_guest_session_SOURCES = lightdm-guest-session.c
+
+lightdm_guest_session_CFLAGS = \
+	$(WARN_CFLAGS) \
+	$(LIGHTDM_CFLAGS)
 
 EXTRA_DIST = \
 	display-manager.xml

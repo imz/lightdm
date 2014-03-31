@@ -5,6 +5,7 @@ TESTS = \
 	test-greeter-fail-start \
 	test-greeter-not-installed \
 	test-greeter-xserver-crash \
+	test-greeter-crash \
 	test-greeter-wrapper \
 	test-greeter-default-session \
 	test-greeter-allow-guest \
@@ -45,14 +46,15 @@ TESTS = \
 	test-autologin-logout \
 	test-autologin-previous-session \
 	test-autologin-guest \
+	test-autologin-guest-session-config \
 	test-autologin-guest-fail-setup-script \
 	test-autologin-guest-logout \
 	test-guest-wrapper \
+	test-login-guest-session-config \
 	test-group-membership \
 	test-xdg-current-desktop \
 	test-xdg-seat \
 	test-language-env \
-	test-util-path \
 	test-session-stdout \
 	test-session-stderr \
 	test-session-stderr-multi-write \
@@ -94,6 +96,7 @@ TESTS = \
 	test-login-gobject-invalid-session \
 	test-login-gobject-logout \
 	test-login-gobject-guest \
+	test-login-gobject-guest-pick-session \
 	test-login-gobject-guest-disabled \
 	test-login-gobject-guest-no-setup-script \
 	test-login-gobject-guest-fail-setup-script \
@@ -108,9 +111,16 @@ TESTS = \
 	test-plymouth-inactive-vt \
 	test-plymouth-no-seat \
 	test-script-hooks \
-	test-script-hook-fail-display-setup \
-	test-script-hook-fail-greeter-setup \
-	test-script-hook-fail-session-setup \
+	test-script-hook-display-setup-fail \
+	test-script-hook-display-setup-missing \
+	test-script-hook-greeter-setup-fail \
+	test-script-hook-greeter-setup-missing \
+	test-script-hook-session-setup-fail \
+	test-script-hook-session-setup-missing \
+	test-shared-data-greeter-to-session \
+	test-shared-data-session-to-greeter \
+	test-shared-data-session-to-greeter-autologin \
+	test-shared-data-invalid-user \
 	test-upstart-autologin \
 	test-upstart-login \
 	test-dbus \
@@ -140,6 +150,9 @@ TESTS = \
 	test-vnc-open-file-descriptors \
 	test-xdmcp-client \
 	test-xdmcp-server-login \
+	test-utmp-login \
+	test-utmp-autologin \
+	test-utmp-wrong-password \
 	test-no-accounts-service \
 	test-console-kit \
 	test-no-console-kit \
@@ -151,12 +164,18 @@ TESTS = \
 	test-gobject-power-no-services \
 	test-open-file-descriptors \
 	test-xdmcp-server-open-file-descriptors \
+	test-multi-seat \
 	test-mir-autologin \
 	test-mir-greeter \
 	test-mir-session \
+	test-mir-session-crash \
+	test-mir-session-compositor-crash \
 	test-unity-compositor-command \
+	test-unity-compositor-not-found \
 	test-unity-compositor-fail-start \
 	test-unity-compositor-fail-ready \
+	test-unity-compositor-crash \
+	test-unity-compositor-fallback \
 	test-unity-compositor-next-session \
 	test-unity-compositor-mir-next-session \
 	test-unity-autologin \
@@ -166,6 +185,7 @@ TESTS = \
 	test-unity-mir-autologin \
 	test-unity-mir-greeter-x-session \
 	test-unity-mir-greeter-mir-session \
+	test-unity-mir-lock-seat \
 	test-unity-mir-session-x-greeter \
 	test-unity-xdg-seat \
 	test-surfaceflinger-autologin
@@ -198,6 +218,7 @@ TESTS += \
 	test-login-python-remember-session \
 	test-login-python-manual-remember-session \
 	test-login-python-guest \
+	test-login-python-guest-pick-session \
 	test-login-python-guest-disabled \
 	test-login-python-guest-no-setup-script \
 	test-login-python-guest-fail-setup-script \
@@ -234,6 +255,7 @@ TESTS += \
 	test-login-qt4-remember-session \
 	test-login-qt4-manual-remember-session \
 	test-login-qt4-guest \
+	test-login-qt4-guest-pick-session \
 	test-login-qt4-guest-disabled \
 	test-login-qt4-guest-no-setup-script \
 	test-login-qt4-guest-fail-setup-script \
@@ -270,6 +292,7 @@ TESTS += \
 	test-login-qt5-remember-session \
 	test-login-qt5-manual-remember-session \
 	test-login-qt5-guest \
+	test-login-qt5-guest-pick-session \
 	test-login-qt5-guest-disabled \
 	test-login-qt5-guest-no-setup-script \
 	test-login-qt5-guest-fail-setup-script \
@@ -307,6 +330,7 @@ EXTRA_DIST = \
 	scripts/autologin-guest.conf \
 	scripts/autologin-guest-fail-setup-script.conf \
 	scripts/autologin-guest-logout.conf \
+	scripts/autologin-guest-session-config.conf \
 	scripts/autologin-guest-timeout.conf \
 	scripts/autologin-in-background.conf \
 	scripts/autologin-invalid-greeter.conf \
@@ -334,6 +358,7 @@ EXTRA_DIST = \
 	scripts/denied.conf \
 	scripts/expired.conf \
 	scripts/greeter-allow-guest.conf \
+	scripts/greeter-crash.conf \
 	scripts/greeter-default-session.conf \
 	scripts/greeter-fail-start.conf \
 	scripts/greeter-hide-users.conf \
@@ -363,7 +388,9 @@ EXTRA_DIST = \
 	scripts/login-guest-disabled.conf \
 	scripts/login-guest-fail-setup-script.conf \
 	scripts/login-guest-logout.conf \
+	scripts/login-guest-pick-session.conf \
 	scripts/login-guest-no-setup-script.conf \
+	scripts/login-guest-session-config.conf \
 	scripts/login-info-prompt.conf \
 	scripts/login-invalid-greeter.conf \
 	scripts/login-invalid-session.conf \
@@ -390,6 +417,9 @@ EXTRA_DIST = \
 	scripts/mir-autologin.conf \
 	scripts/mir-greeter.conf \
 	scripts/mir-session.conf \
+	scripts/mir-session-compositor-crash.conf \
+	scripts/mir-session-crash.conf \
+	scripts/multi-seat.conf \
 	scripts/no-accounts-service.conf \
 	scripts/no-config.conf \
 	scripts/no-console-kit.conf \
@@ -405,10 +435,17 @@ EXTRA_DIST = \
 	scripts/plymouth-inactive-vt.conf \
 	scripts/plymouth-no-seat.conf \
 	scripts/restart-authentication.conf \
+	scripts/shared-data-greeter-to-session.conf \
+	scripts/shared-data-invalid-user.conf \
+	scripts/shared-data-session-to-greeter.conf \
+	scripts/shared-data-session-to-greeter-autologin.conf \
 	scripts/script-hooks.conf \
-	scripts/script-hook-fail-display-setup.conf \
-	scripts/script-hook-fail-greeter-setup.conf \
-	scripts/script-hook-fail-session-setup.conf \
+	scripts/script-hook-display-setup-fail.conf \
+	scripts/script-hook-display-setup-missing.conf \
+	scripts/script-hook-greeter-setup-fail.conf \
+	scripts/script-hook-greeter-setup-missing.conf \
+	scripts/script-hook-session-setup-fail.conf \
+	scripts/script-hook-session-setup-missing.conf \
 	scripts/session-stdout.conf \
 	scripts/session-stderr.conf \
 	scripts/session-stderr-multi-write.conf \
@@ -430,13 +467,17 @@ EXTRA_DIST = \
 	scripts/system-xauthority.conf \
 	scripts/unity-autologin.conf \
 	scripts/unity-compositor-command.conf \
+	scripts/unity-compositor-crash.conf \
 	scripts/unity-compositor-fail-ready.conf \
 	scripts/unity-compositor-fail-start.conf \
+	scripts/unity-compositor-fallback.conf \
 	scripts/unity-compositor-mir-next-session.conf \
 	scripts/unity-compositor-next-session.conf \
+	scripts/unity-compositor-not-found.conf \
 	scripts/unity-login.conf \
 	scripts/unity-mir-autologin.conf \
 	scripts/unity-mir-greeter-mir-session.conf \
+	scripts/unity-mir-lock-seat.conf \
 	scripts/unity-mir-greeter-x-session.conf \
 	scripts/unity-mir-session-x-greeter.conf \
 	scripts/unity-plymouth.conf \
@@ -451,10 +492,12 @@ EXTRA_DIST = \
 	scripts/user-layout.conf \
 	scripts/user-logged-in.conf \
 	scripts/user-name.conf \
-	scripts/util-path.conf \
 	scripts/user-renamed.conf \
 	scripts/user-renamed-invalid.conf \
 	scripts/user-session.conf \
+	scripts/utmp-autologin.conf \
+	scripts/utmp-login.conf \
+	scripts/utmp-wrong-password.conf \
 	scripts/vnc-command.conf \
 	scripts/vnc-dimensions.conf \
 	scripts/vnc-login.conf \

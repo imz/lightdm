@@ -23,7 +23,6 @@
 #include "process.h"
 
 enum {
-    RUN,
     GOT_DATA,
     GOT_SIGNAL,  
     STOPPED,
@@ -32,10 +31,18 @@ enum {
 static guint signals[LAST_SIGNAL] = { 0 };
 
 struct ProcessPrivate
-{  
+{
+    /* Function to run inside subprocess before exec */
+    ProcessRunFunc run_func;
+    gpointer run_func_data;
+
+    /* File to log to */
+    gchar *log_file;
+    gboolean log_stdout;
+
     /* Command to run */
     gchar *command;
-  
+
     /* TRUE to clear the environment in this process */
     gboolean clear_environment;
 
@@ -48,6 +55,9 @@ struct ProcessPrivate
     /* Exit status of process */
     int exit_status;
 
+    /* TRUE if stopping this process (waiting for child process to stop) */
+    gboolean stopping;
+
     /* Timeout waiting for process to quit */
     guint quit_timeout;
 
@@ -59,6 +69,7 @@ G_DEFINE_TYPE (Process, process, G_TYPE_OBJECT);
 
 static Process *current_process = NULL;
 static GHashTable *processes = NULL;
+static pid_t signal_pid;
 static int signal_pipe[2];
 
 Process *
@@ -67,16 +78,28 @@ process_get_current (void)
     if (current_process)
         return current_process;
 
-    current_process = process_new ();
+    current_process = process_new (NULL, NULL);
     current_process->priv->pid = getpid ();
 
     return current_process;
 }
 
 Process *
-process_new (void)
+process_new (ProcessRunFunc run_func, gpointer run_func_data)
 {
-    return g_object_new (PROCESS_TYPE, NULL);
+    Process *process = g_object_new (PROCESS_TYPE, NULL);
+    process->priv->run_func = run_func;
+    process->priv->run_func_data = run_func_data;
+    return process;
+}
+
+void
+process_set_log_file (Process *process, const gchar *path, gboolean log_stdout)
+{
+    g_return_if_fail (process != NULL);
+    g_free (process->priv->log_file);
+    process->priv->log_file = g_strdup (path);
+    process->priv->log_stdout = log_stdout;
 }
 
 void
@@ -130,16 +153,13 @@ process_watch_cb (GPid pid, gint status, gpointer data)
 {
     Process *process = data;
 
+    process->priv->watch = 0;
     process->priv->exit_status = status;
 
     if (WIFEXITED (status))
         g_debug ("Process %d exited with return value %d", pid, WEXITSTATUS (status));
     else if (WIFSIGNALED (status))
         g_debug ("Process %d terminated with signal %d", pid, WTERMSIG (status));
-
-    if (process->priv->watch)
-        g_source_remove (process->priv->watch);
-    process->priv->watch = 0;
 
     if (process->priv->quit_timeout)
         g_source_remove (process->priv->quit_timeout);
@@ -150,56 +170,93 @@ process_watch_cb (GPid pid, gint status, gpointer data)
     g_signal_emit (process, signals[STOPPED], 0);
 }
 
-static void
-process_run (Process *process)
-{
-    gint argc;
-    gchar **argv;
-    GHashTableIter iter;
-    gpointer key, value;
-    GError *error = NULL;
-
-    if (!g_shell_parse_argv (process->priv->command, &argc, &argv, &error))
-    {
-        g_warning ("Error parsing command %s: %s", process->priv->command, error->message);
-        _exit (EXIT_FAILURE);
-    }
-
-    if (process->priv->clear_environment)
-#ifdef HAVE_CLEARENV
-        clearenv ();
-#else
-        environ = NULL;
-#endif
-
-    g_hash_table_iter_init (&iter, process->priv->env);
-    while (g_hash_table_iter_next (&iter, &key, &value))
-        g_setenv ((gchar *)key, (gchar *)value, TRUE);
-  
-    execvp (argv[0], argv);
-
-    g_warning ("Error executing child process %s: %s", argv[0], g_strerror (errno));
-    _exit (EXIT_FAILURE);
-}
-
 gboolean
 process_start (Process *process, gboolean block)
 {
+    gint argc;
+    gchar **argv;
+    gchar **env_keys, **env_values;
+    guint i, env_length;
+    GList *link;
     pid_t pid;
+    int log_fd = -1;
+    GError *error = NULL;
 
     g_return_val_if_fail (process != NULL, FALSE);
     g_return_val_if_fail (process->priv->command != NULL, FALSE);  
     g_return_val_if_fail (process->priv->pid == 0, FALSE);
 
+    if (!g_shell_parse_argv (process->priv->command, &argc, &argv, &error))
+    {
+        g_warning ("Error parsing command %s: %s", process->priv->command, error->message);
+        return FALSE;
+    }
+
+    if (process->priv->log_file)
+    {
+        gchar *old_filename;
+
+        /* Move old file out of the way */
+        old_filename = g_strdup_printf ("%s.old", process->priv->log_file);
+        rename (process->priv->log_file, old_filename);
+        g_free (old_filename);
+
+        /* Create new file and log to it */
+        log_fd = g_open (process->priv->log_file, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (log_fd < 0)
+            g_warning ("Failed to open log file %s: %s", process->priv->log_file, g_strerror (errno));
+    }
+
+    /* Work out variables to set */
+    env_length = g_hash_table_size (process->priv->env);
+    env_keys = g_malloc (sizeof (gchar *) * env_length);
+    env_values = g_malloc (sizeof (gchar *) * env_length);
+    for (i = 0, link = g_hash_table_get_keys (process->priv->env); i < env_length; i++, link = link->next)
+    {
+        env_keys[i] = link->data;
+        env_values[i] = g_hash_table_lookup (process->priv->env, env_keys[i]);
+    }
+
     pid = fork ();
+    if (pid == 0)
+    {
+        /* Do custom setup */
+        if (process->priv->run_func)
+            process->priv->run_func (process, process->priv->run_func_data);
+
+        /* Redirect output to logfile */
+        if (log_fd >= 0)
+        {
+             if (process->priv->log_stdout)
+                 dup2 (log_fd, STDOUT_FILENO);
+             dup2 (log_fd, STDERR_FILENO);
+             close (log_fd);
+        }
+
+        /* Set environment */
+        if (process->priv->clear_environment)
+#ifdef HAVE_CLEARENV
+            clearenv ();
+#else
+            environ = NULL;
+#endif
+        for (i = 0; i < env_length; i++)
+            setenv (env_keys[i], env_values[i], TRUE);
+  
+        execvp (argv[0], argv);
+        _exit (EXIT_FAILURE);
+    }
+  
+    close (log_fd);
+    g_strfreev (argv);
+    g_free (env_keys);
+    g_free (env_values);
+
     if (pid < 0)
     {
         g_warning ("Failed to fork: %s", strerror (errno));
         return FALSE;
     }
-
-    if (pid == 0)
-        g_signal_emit (process, signals[RUN], 0);
 
     g_debug ("Launching process %d: %s", pid, process->priv->command);
 
@@ -245,7 +302,11 @@ process_signal (Process *process, int signum)
     g_debug ("Sending signal %d to process %d", signum, process->priv->pid);
 
     if (kill (process->priv->pid, signum) < 0)
-        g_warning ("Error sending signal %d to process %d: %s", signum, process->priv->pid, strerror (errno));
+    {
+        /* Ignore ESRCH, we will pick that up in our wait */
+        if (errno != ESRCH)
+            g_warning ("Error sending signal %d to process %d: %s", signum, process->priv->pid, strerror (errno));
+    }
 }
 
 static gboolean
@@ -260,6 +321,14 @@ void
 process_stop (Process *process)
 {
     g_return_if_fail (process != NULL);
+
+    if (process->priv->stopping)
+        return;
+    process->priv->stopping = TRUE;
+
+    /* If already stopped then we're done! */
+    if (process->priv->pid == 0)
+        return;
 
     /* Send SIGTERM, and then SIGKILL if no response */
     process->priv->quit_timeout = g_timeout_add (5000, (GSourceFunc) quit_timeout_cb, process);
@@ -295,6 +364,7 @@ process_finalize (GObject *object)
     if (self->priv->pid > 0)
         g_hash_table_remove (processes, GINT_TO_POINTER (self->priv->pid));
 
+    g_free (self->priv->log_file);
     g_free (self->priv->command);
     g_hash_table_unref (self->priv->env);
     if (self->priv->quit_timeout)
@@ -311,10 +381,15 @@ process_finalize (GObject *object)
 static void
 signal_cb (int signum, siginfo_t *info, void *data)
 {
-    /* NOTE: Using g_printerr as can't call g_warning from a signal callback */
+    /* Check if we are from a forked process that hasn't updated the signal handlers or execed.
+       If so, then we should just quit */
+    if (getpid () != signal_pid)
+        _exit (EXIT_SUCCESS);
+
+    /* Write signal to main thread, if something goes wrong just close the pipe so it is detected on the other end */
     if (write (signal_pipe[1], &info->si_signo, sizeof (int)) < 0 ||
         write (signal_pipe[1], &info->si_pid, sizeof (pid_t)) < 0)
-        g_printerr ("Failed to write to signal pipe: %s", strerror (errno));
+        close (signal_pipe[1]);
 }
 
 static gboolean
@@ -329,7 +404,7 @@ handle_signal (GIOChannel *source, GIOCondition condition, gpointer data)
         read (signal_pipe[0], &pid, sizeof (pid_t)) != sizeof (pid_t))
     {
         g_warning ("Error reading from signal pipe: %s", strerror (errno));
-        return TRUE;
+        return FALSE;
     }
 
     g_debug ("Got signal %d from process %d", signo, pid);
@@ -349,20 +424,11 @@ process_class_init (ProcessClass *klass)
     GObjectClass *object_class = G_OBJECT_CLASS (klass);
     struct sigaction action;
 
-    klass->run = process_run;
     klass->stopped = process_stopped;
     object_class->finalize = process_finalize;  
 
     g_type_class_add_private (klass, sizeof (ProcessPrivate));
 
-    signals[RUN] =
-        g_signal_new ("run",
-                      G_TYPE_FROM_CLASS (klass),
-                      G_SIGNAL_RUN_LAST,
-                      G_STRUCT_OFFSET (ProcessClass, run),
-                      NULL, NULL,
-                      NULL,
-                      G_TYPE_NONE, 0); 
     signals[GOT_DATA] =
         g_signal_new ("got-data",
                       G_TYPE_FROM_CLASS (klass),
@@ -390,6 +456,7 @@ process_class_init (ProcessClass *klass)
 
     /* Catch signals and feed them to the main loop via a pipe */
     processes = g_hash_table_new_full (g_direct_hash, g_direct_equal, NULL, g_object_unref);
+    signal_pid = getpid ();
     if (pipe (signal_pipe) != 0)
         g_critical ("Failed to create signal pipe");
     fcntl (signal_pipe[0], F_SETFD, FD_CLOEXEC);

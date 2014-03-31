@@ -135,6 +135,13 @@ seat_get_string_property (Seat *seat, const gchar *name)
     return g_hash_table_lookup (seat->priv->properties, name);
 }
 
+gchar **
+seat_get_string_list_property (Seat *seat, const gchar *name)
+{
+    g_return_val_if_fail (seat != NULL, NULL);
+    return g_strsplit (g_hash_table_lookup (seat->priv->properties, name), ";", 0);
+}
+
 gboolean
 seat_get_boolean_property (Seat *seat, const gchar *name)
 {
@@ -148,6 +155,18 @@ seat_get_integer_property (Seat *seat, const gchar *name)
 
     value = seat_get_string_property (seat, name);
     return value ? atoi (value) : 0;
+}
+
+const gchar *
+seat_get_name (Seat *seat)
+{
+    const gchar *name;
+
+    name = seat_get_string_property (seat, "xdg-seat");
+    if (name)
+        return name;
+
+    return "seat0";
 }
 
 void
@@ -213,6 +232,8 @@ seat_set_active_session (Seat *seat, Session *session)
             session_lock (seat->priv->active_session);
         g_object_unref (seat->priv->active_session);
     }
+
+    session_activate (session);
     seat->priv->active_session = g_object_ref (session);
 }
 
@@ -250,7 +271,7 @@ run_script (Seat *seat, DisplayServer *display_server, const gchar *script_name,
     Process *script;
     gboolean result = FALSE;
   
-    script = process_new ();
+    script = process_new (NULL, NULL);
 
     process_set_command (script, script_name);
 
@@ -433,13 +454,12 @@ switch_to_greeter_from_failed_session (Seat *seat, Session *session)
         DisplayServer *display_server;
 
         display_server = create_display_server (seat, session_get_session_type (session));
+        session_set_display_server (session, display_server);
         if (!display_server_start (display_server))
         {
             l_debug (seat, "Failed to start display server for greeter");
             seat_stop (seat);
         }
-
-        session_set_display_server (session, display_server);
     }
 
     start_session (seat, SESSION (greeter_session));
@@ -510,6 +530,17 @@ run_session (Seat *seat, Session *session)
         seat_set_active_session (seat, session);
         g_object_unref (seat->priv->session_to_activate);
         seat->priv->session_to_activate = NULL;
+    }
+    else if (seat->priv->active_session)
+    {
+        /* Multiple sessions can theoretically be on the same VT (especially
+           if using Mir).  If a new session appears on an existing active VT,
+           logind will mark it as active, while ConsoleKit will re-mark the
+           oldest session as active.  In either case, that may not be the
+           session that we want to be active.  So let's be explicit and
+           re-activate the correct session whenever a new session starts.
+           There's no harm to do this in seats that enforce separate VTs. */
+        session_activate (seat->priv->active_session);
     }
 }
 
@@ -909,14 +940,17 @@ prepend_argv (gchar ***argv, const gchar *value)
 }
 
 static Session *
-create_guest_session (Seat *seat)
+create_guest_session (Seat *seat, const gchar *session_name)
 {
-    const gchar *session_name, *guest_wrapper;
+    const gchar *guest_wrapper;
     gchar *sessions_dir, **argv;
     SessionConfig *session_config;
     Session *session;
 
-    session_name = seat_get_string_property (seat, "user-session");
+    if (!session_name)
+        session_name = seat_get_string_property (seat, "guest-session");
+    if (!session_name)
+        session_name = seat_get_string_property (seat, "user-session");
     sessions_dir = config_get_string (config_get_instance (), "LightDM", "sessions-directory");
     session_config = find_session_config (seat, sessions_dir, session_name);
     g_free (sessions_dir);
@@ -969,7 +1003,7 @@ greeter_start_session_cb (Greeter *greeter, SessionType type, const gchar *sessi
     /* Get the session to use */
     if (greeter_get_guest_authenticated (greeter))
     {
-        session = create_guest_session (seat);
+        session = create_guest_session (seat, session_name);
         if (!session)
             return FALSE;
         session_set_pam_service (session, AUTOLOGIN_SERVICE);
@@ -1380,13 +1414,11 @@ seat_switch_to_guest (Seat *seat, const gchar *session_name)
         return TRUE;
     }
 
-    session = create_guest_session (seat);
+    session = create_guest_session (seat, session_name);
     if (!session)
         return FALSE;
 
     display_server = create_display_server (seat, session_get_session_type (session));
-    if (!display_server_start (display_server))
-        return FALSE;
 
     if (seat->priv->session_to_activate)
         g_object_unref (seat->priv->session_to_activate);
@@ -1394,7 +1426,7 @@ seat_switch_to_guest (Seat *seat, const gchar *session_name)
     session_set_pam_service (session, AUTOLOGIN_SERVICE);
     session_set_display_server (session, display_server);
 
-    return TRUE;
+    return display_server_start (display_server);
 }
 
 gboolean
@@ -1424,8 +1456,6 @@ seat_lock (Seat *seat, const gchar *username)
         return FALSE;
 
     display_server = create_display_server (seat, session_get_session_type (SESSION (greeter_session)));
-    if (!display_server_start (display_server))
-        return FALSE;
 
     if (seat->priv->session_to_activate)
         g_object_unref (seat->priv->session_to_activate);
@@ -1435,7 +1465,7 @@ seat_lock (Seat *seat, const gchar *username)
         greeter_set_hint (greeter_session, "select-user", username);
     session_set_display_server (SESSION (greeter_session), display_server);
 
-    return TRUE;
+    return display_server_start (display_server);
 }
 
 void
@@ -1500,7 +1530,7 @@ seat_real_start (Seat *seat)
     if (autologin_timeout == 0 || autologin_in_background)
     {
         if (autologin_guest)
-            session = create_guest_session (seat);
+            session = create_guest_session (seat, NULL);
         else if (autologin_username != NULL)
             session = create_user_session (seat, autologin_username, TRUE);
 

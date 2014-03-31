@@ -13,7 +13,7 @@ dist_pam_DATA = pam/lightdm \
                 pam/lightdm-greeter
 
 lightdm-guest-session: $(srcdir)/apparmor/lightdm-guest-session.in
-	sed -e 's|@pkglibexecdir[@]|$(pkglibexecdir)|g' $< >$@
+	sed -e 's|@libexecdir[@]|$(libexecdir)|g' $< >$@
 
 apparmor_profiledir = $(sysconfdir)/apparmor.d
 apparmor_profile_DATA = \
@@ -24,8 +24,8 @@ dist_apparmor_profile_abstractions_DATA = \
     apparmor/abstractions/lightdm \
     apparmor/abstractions/lightdm_chromium-browser
 
-dist_man1_MANS = lightdm.1 \
-                 lightdm-set-defaults.1
+dist_man1_MANS = dm-tool.1 \
+                 lightdm.1
 
 EXTRA_DIST = apparmor/lightdm-guest-session.in
 CLEANFILES = lightdm-guest-session

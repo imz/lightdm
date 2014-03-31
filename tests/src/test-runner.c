@@ -122,7 +122,7 @@ typedef struct
 } StatusClient;
 static GList *status_clients = NULL;
 
-static void run_lightdm (void);
+static void ready (void);
 static void quit (int status);
 static void check_status (const gchar *status);
 static AccountsUser *get_accounts_user_by_uid (guint uid);
@@ -134,9 +134,12 @@ kill_timeout_cb (gpointer data)
 {
     Process *process = data;
 
+    process->kill_timeout = 0;
+
     if (getenv ("DEBUG"))
         g_print ("Sending SIGKILL to process %d\n", process->pid);
     kill (process->pid, SIGKILL);
+
     return FALSE;
 }
 
@@ -319,6 +322,13 @@ get_script_line (const gchar *prefix)
     return NULL;
 }
 
+static gboolean
+stop_loop (gpointer user_data)
+{
+    g_main_loop_quit ((GMainLoop *)user_data);
+    return G_SOURCE_REMOVE;
+}
+
 static void
 handle_command (const gchar *command)
 {
@@ -396,9 +406,46 @@ handle_command (const gchar *command)
         g_hash_table_insert (params, param_name, param_value);
     }
 
-    if (strcmp (name, "WAIT") == 0)
+    if (strcmp (name, "START-DAEMON") == 0)
     {
-        sleep (1);
+        GString *command_line;
+        gchar **lightdm_argv;
+        pid_t lightdm_pid;
+        GError *error = NULL;
+
+        command_line = g_string_new ("lightdm");
+        if (getenv ("DEBUG"))
+            g_string_append (command_line, " --debug");
+        g_string_append_printf (command_line, " --cache-dir %s/cache", temp_dir);
+
+        test_runner_command = g_strdup_printf ("PATH=%s LD_PRELOAD=%s LD_LIBRARY_PATH=%s LIGHTDM_TEST_ROOT=%s DBUS_SESSION_BUS_ADDRESS=%s %s\n",
+                                               g_getenv ("PATH"), g_getenv ("LD_PRELOAD"), g_getenv ("LD_LIBRARY_PATH"), g_getenv ("LIGHTDM_TEST_ROOT"), g_getenv ("DBUS_SESSION_BUS_ADDRESS"),
+                                               command_line->str);
+
+        if (!g_shell_parse_argv (command_line->str, NULL, &lightdm_argv, &error))
+        {
+            g_warning ("Error parsing command line: %s", error->message);
+            quit (EXIT_FAILURE);
+        }
+        g_clear_error (&error);
+
+        if (!g_spawn_async (NULL, lightdm_argv, NULL, G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH, NULL, NULL, &lightdm_pid, &error))
+        {
+            g_warning ("Error launching LightDM: %s", error->message);
+            quit (EXIT_FAILURE);
+        }
+        g_clear_error (&error);
+        lightdm_process = watch_process (lightdm_pid);
+
+        check_status ("RUNNER DAEMON-START");
+    }
+    else if (strcmp (name, "WAIT") == 0)
+    {
+        /* Use a main loop so that our DBus functions are still responsive */
+        GMainLoop *loop = g_main_loop_new (NULL, FALSE);
+        g_timeout_add_seconds (1, stop_loop, loop);
+        g_main_loop_run (loop);
+        g_main_loop_unref (loop);
     }
     else if (strcmp (name, "LIST-SEATS") == 0)
     {
@@ -787,7 +834,8 @@ check_status (const gchar *status)
     line->done = TRUE;
 
     /* Restart timeout */
-    g_source_remove (status_timeout);
+    if (status_timeout)
+        g_source_remove (status_timeout);
     status_timeout = g_timeout_add (status_timeout_ms, status_timeout_cb, NULL);
 
     run_commands ();
@@ -958,7 +1006,7 @@ upower_name_acquired_cb (GDBusConnection *connection,
 
     service_count--;
     if (service_count == 0)
-        run_lightdm ();
+        ready ();
 }
 
 static void
@@ -1061,7 +1109,7 @@ handle_ck_call (GDBusConnection       *connection,
         for (link = ck_sessions; link; link = link->next)
         {
             CKSession *session = link->data;
-            if (strcmp (session->cookie, cookie) != 0)
+            if (strcmp (session->cookie, cookie) == 0)
             {
                 g_dbus_method_invocation_return_value (invocation, g_variant_new ("(o)", session->path));
                 return;
@@ -1108,6 +1156,14 @@ handle_ck_session_call (GDBusConnection       *connection,
         if (session->locked)
             check_status ("CONSOLE-KIT UNLOCK-SESSION");
         session->locked = FALSE;
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    }
+    else if (strcmp (method_name, "Activate") == 0)
+    {
+        gchar *status = g_strdup_printf ("CONSOLE-KIT ACTIVATE-SESSION SESSION=%s", session->cookie);
+        check_status (status);
+        g_free (status);
+
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
     }
     else
@@ -1162,6 +1218,7 @@ ck_name_acquired_cb (GDBusConnection *connection,
         "  <interface name='org.freedesktop.ConsoleKit.Session'>"
         "    <method name='Lock'/>"
         "    <method name='Unlock'/>"
+        "    <method name='Activate'/>"
         "  </interface>"
         "</node>";
     GDBusNodeInfo *ck_info;
@@ -1194,7 +1251,7 @@ ck_name_acquired_cb (GDBusConnection *connection,
 
     service_count--;
     if (service_count == 0)
-        run_lightdm ();
+        ready ();
 }
 
 static void
@@ -1204,8 +1261,8 @@ start_console_kit_daemon (void)
     g_bus_own_name (G_BUS_TYPE_SYSTEM,
                     "org.freedesktop.ConsoleKit",
                     G_BUS_NAME_OWNER_FLAGS_NONE,
-                    ck_name_acquired_cb,
                     NULL,
+                    ck_name_acquired_cb,
                     NULL,
                     NULL,
                     NULL);
@@ -1237,6 +1294,14 @@ handle_login1_session_call (GDBusConnection       *connection,
         session->locked = FALSE;
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
     }
+    else if (strcmp (method_name, "Activate") == 0)
+    {
+        gchar *status = g_strdup_printf ("LOGIN1 ACTIVATE-SESSION SESSION=%s", strrchr (object_path, '/') + 1);
+        check_status (status);
+        g_free (status);
+
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    }
     else
         g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
 }
@@ -1254,6 +1319,7 @@ open_login1_session (GDBusConnection *connection,
         "  <interface name='org.freedesktop.login1.Session'>"
         "    <method name='Lock'/>"
         "    <method name='Unlock'/>"
+        "    <method name='Activate'/>"
         "  </interface>"
         "</node>";
     static const GDBusInterfaceVTable login1_session_vtable =
@@ -1449,7 +1515,7 @@ login1_name_acquired_cb (GDBusConnection *connection,
 
     service_count--;
     if (service_count == 0)
-        run_lightdm ();
+        ready ();
 }
 
 static void
@@ -1459,8 +1525,8 @@ start_login1_daemon (void)
     g_bus_own_name (G_BUS_TYPE_SYSTEM,
                     "org.freedesktop.login1",
                     G_BUS_NAME_OWNER_FLAGS_NONE,
-                    login1_name_acquired_cb,
                     NULL,
+                    login1_name_acquired_cb,
                     NULL,
                     NULL,
                     NULL);
@@ -1715,6 +1781,15 @@ handle_user_call (GDBusConnection       *connection,
         user->xsession = g_strdup (xsession);
 
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+
+        /* And notify others that it took */
+        g_dbus_connection_emit_signal (accounts_connection,
+                                       NULL,
+                                       user->path,
+                                       "org.freedesktop.Accounts.User",
+                                       "Changed",
+                                       g_variant_new ("()"),
+                                       NULL);
     }
     else
         g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
@@ -1745,6 +1820,10 @@ handle_user_get_property (GDBusConnection       *connection,
         return g_variant_new_string (user->language ? user->language : "");
     else if (strcmp (property_name, "IconFile") == 0)
         return g_variant_new_string (user->image ? user->image : "");
+    else if (strcmp (property_name, "Shell") == 0)
+        return g_variant_new_string ("/bin/sh");
+    else if (strcmp (property_name, "Uid") == 0)
+        return g_variant_new_uint64 (user->uid);
     else if (strcmp (property_name, "XSession") == 0)
         return g_variant_new_string (user->xsession ? user->xsession : "");
     else if (strcmp (property_name, "XKeyboardLayouts") == 0)
@@ -1800,6 +1879,8 @@ accounts_name_acquired_cb (GDBusConnection *connection,
         "    <property name='BackgroundFile' type='s' access='read'/>"
         "    <property name='Language' type='s' access='read'/>"
         "    <property name='IconFile' type='s' access='read'/>"
+        "    <property name='Shell' type='s' access='read'/>"
+        "    <property name='Uid' type='t' access='read'/>"
         "    <property name='XSession' type='s' access='read'/>"
         "    <property name='XKeyboardLayouts' type='as' access='read'/>"
         "    <property name='XHasMessages' type='b' access='read'/>"
@@ -1836,7 +1917,7 @@ accounts_name_acquired_cb (GDBusConnection *connection,
 
     service_count--;
     if (service_count == 0)
-        run_lightdm ();
+        ready ();
 }
 
 static void
@@ -1854,42 +1935,9 @@ start_accounts_service_daemon (void)
 }
 
 static void
-run_lightdm (void)
+ready (void)
 {
-    GString *command_line;
-    gchar **lightdm_argv;
-    pid_t lightdm_pid;
-    GError *error = NULL;
-
     run_commands ();
-
-    status_timeout = g_timeout_add (status_timeout_ms, status_timeout_cb, NULL);
-
-    command_line = g_string_new ("lightdm");
-    if (getenv ("DEBUG"))
-        g_string_append (command_line, " --debug");
-    g_string_append_printf (command_line, " --cache-dir %s/cache", temp_dir);
-
-    test_runner_command = g_strdup_printf ("PATH=%s LD_PRELOAD=%s LD_LIBRARY_PATH=%s LIGHTDM_TEST_ROOT=%s DBUS_SESSION_BUS_ADDRESS=%s %s\n",
-                                           g_getenv ("PATH"), g_getenv ("LD_PRELOAD"), g_getenv ("LD_LIBRARY_PATH"), g_getenv ("LIGHTDM_TEST_ROOT"), g_getenv ("DBUS_SESSION_BUS_ADDRESS"),
-                                           command_line->str);
-
-    if (!g_shell_parse_argv (command_line->str, NULL, &lightdm_argv, &error))
-    {
-        g_warning ("Error parsing command line: %s", error->message);
-        quit (EXIT_FAILURE);
-    }
-    g_clear_error (&error);
-
-    if (!g_spawn_async (NULL, lightdm_argv, NULL, G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH, NULL, NULL, &lightdm_pid, &error))
-    {
-        g_warning ("Error launching LightDM: %s", error->message);
-        quit (EXIT_FAILURE);
-    }
-    g_clear_error (&error);
-    lightdm_process = watch_process (lightdm_pid);
-
-    check_status ("RUNNER DAEMON-START");
 }
 
 static gboolean
@@ -1946,6 +1994,10 @@ main (int argc, char **argv)
 
     /* Don't contact our X server */
     g_unsetenv ("DISPLAY");
+
+    /* Don't let XDG vars from system affect tests */
+    g_unsetenv ("XDG_CONFIG_DIRS");
+    g_unsetenv ("XDG_DATA_DIRS");
 
     /* Override system calls */
     ld_preload = g_build_filename (BUILDDIR, "tests", "src", ".libs", "libsystem.so", NULL);
@@ -2031,6 +2083,7 @@ main (int argc, char **argv)
     g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/lightdm/remote-sessions", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/usr/share/lightdm/greeters", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/tmp", temp_dir), 0755);
+    g_mkdir_with_parents (g_strdup_printf ("%s/var/lib/lightdm-data", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/var/run", temp_dir), 0755);
     g_mkdir_with_parents (g_strdup_printf ("%s/var/log", temp_dir), 0755);
 
@@ -2059,13 +2112,44 @@ main (int argc, char **argv)
     {
         gchar **files;
 
-        g_mkdir_with_parents (g_strdup_printf ("%s/etc/lightdm/lightdm.conf.d", temp_dir), 0755);
+        g_mkdir_with_parents (g_strdup_printf ("%s/etc/xdg/lightdm/lightdm.conf.d", temp_dir), 0755);
 
         files = g_strsplit (additional_config, " ", -1);
         for (i = 0; files[i]; i++)
-            if (system (g_strdup_printf ("cp %s/tests/scripts/%s %s/etc/lightdm/lightdm.conf.d", SRCDIR, files[i], temp_dir)))
+            if (system (g_strdup_printf ("cp %s/tests/scripts/%s %s/etc/xdg/lightdm/lightdm.conf.d", SRCDIR, files[i], temp_dir)))
                 perror ("Failed to copy configuration");
         g_strfreev (files);
+    }
+
+    if (g_key_file_has_key (config, "test-runner-config", "shared-data-dirs", NULL))
+    {
+        gchar *dir_string;
+        gchar **dirs;
+        gint i;
+
+        dir_string = g_key_file_get_string (config, "test-runner-config", "shared-data-dirs", NULL);
+        dirs = g_strsplit (dir_string, " ", -1);
+        g_free (dir_string);
+
+        for (i = 0; dirs[i]; i++)
+        {
+            gchar **fields = g_strsplit (dirs[i], ":", -1);
+            if (g_strv_length (fields) == 4)
+            {
+                gchar *path = g_strdup_printf ("%s/var/lib/lightdm-data/%s", temp_dir, fields[0]);
+                int uid = g_ascii_strtoll (fields[1], NULL, 10);
+                int gid = g_ascii_strtoll (fields[2], NULL, 10);
+                int mode = g_ascii_strtoll (fields[3], NULL, 8);
+                g_mkdir (path, mode);
+                g_chmod (path, mode); /* mkdir filters by umask, so make sure we have what we want */
+                if (chown (path, uid, gid) < 0)
+                  g_warning ("chown (%s) failed: %s", path, strerror (errno));
+                g_free (path);
+            }
+            g_strfreev (fields);
+        }
+
+        g_strfreev (dirs);
     }
 
     /* Always copy the script */

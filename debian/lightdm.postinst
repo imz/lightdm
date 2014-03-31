@@ -37,7 +37,7 @@ if ! getent group nopasswdlogin >/dev/null; then
 fi
 
 if [ -d /var/lib/lightdm ]; then
-  chown -R lightdm:lightdm /var/lib/lightdm
+  chown -R lightdm:lightdm /var/lib/lightdm || true
   chmod 0750 /var/lib/lightdm
 fi
 
@@ -68,16 +68,6 @@ fi
 # Registering the init scripts or starting the daemon may cause output to
 # stdout, which can confuse debconf.
 db_stop
-
-# migrate gdm configuration on first-time installation
-if [ -z "$2" ]; then
-    if grep -q '^AutomaticLoginEnable *= *true$' /etc/gdm/custom.conf 2>/dev/null; then
-        user=`sed -n '/^AutomaticLogin *=/ { s/^.*= *//; p }' /etc/gdm/custom.conf`
-        if [ -n "$user" ]; then
-            /usr/lib/lightdm/lightdm-set-defaults --keep-old --autologin="$user"
-        fi
-    fi
-fi
 
 case "$1" in
     configure)

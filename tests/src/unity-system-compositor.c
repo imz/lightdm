@@ -118,20 +118,25 @@ read_message_cb (GIOChannel *channel, GIOCondition condition, gpointer data)
 }
 
 static void
-request_cb (const gchar *request)
+request_cb (const gchar *name, GHashTable *params)
 {
-    if (!request)
+    if (!name)
     {
         g_main_loop_quit (loop);
         return;
     }
 
-    if (strcmp (request, "UNITY-SYSTEM-COMPOSITOR PING") == 0)
+    if (strcmp (name, "PING") == 0)
         write_message (USC_MESSAGE_PING, NULL, 0);
-    else if (strcmp (request, "UNITY-SYSTEM-COMPOSITOR PONG") == 0)
+
+    else if (strcmp (name, "PONG") == 0)
         write_message (USC_MESSAGE_PONG, NULL, 0);
-    else if (strcmp (request, "UNITY-SYSTEM-COMPOSITOR READY") == 0)
+
+    else if (strcmp (name, "READY") == 0)
         write_message (USC_MESSAGE_READY, NULL, 0);
+
+    else if (strcmp (name, "CRASH") == 0)
+        kill (getpid (), SIGSEGV);
 }
 
 int
@@ -141,6 +146,7 @@ main (int argc, char **argv)
     GString *status_text;
     gboolean test = FALSE;
     int vt_number = -1;
+    const gchar *file = NULL;
 
 #if !defined(GLIB_VERSION_2_36)
     g_type_init ();
@@ -151,7 +157,7 @@ main (int argc, char **argv)
     g_unix_signal_add (SIGINT, sigint_cb, NULL);
     g_unix_signal_add (SIGTERM, sigterm_cb, NULL);
 
-    status_connect (request_cb);
+    status_connect (request_cb, "UNITY-SYSTEM-COMPOSITOR");
 
     for (i = 1; i < argc; i++)
     {
@@ -174,7 +180,7 @@ main (int argc, char **argv)
         }
         else if (strcmp (arg, "--file") == 0)
         {
-            /*file = argv[i+1];*/
+            file = argv[i+1];
             i++;
         }
         else if (strcmp (arg, "--test") == 0)
@@ -186,6 +192,8 @@ main (int argc, char **argv)
     g_io_add_watch (g_io_channel_unix_new (from_dm_fd), G_IO_IN, read_message_cb, NULL);
 
     status_text = g_string_new ("UNITY-SYSTEM-COMPOSITOR START");
+    if (file)
+        g_string_append_printf (status_text, " FILE=%s", file);
     if (vt_number >= 0)
         g_string_append_printf (status_text, " VT=%d", vt_number);
     if (g_getenv ("XDG_VTNR"))

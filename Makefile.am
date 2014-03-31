@@ -1,4 +1,4 @@
-SUBDIRS =
+SUBDIRS = common
 if COMPILE_LIBLIGHTDM_GOBJECT
 SUBDIRS += liblightdm-gobject
 endif
@@ -6,7 +6,7 @@ SUBDIRS += liblightdm-qt
 if COMPILE_TESTS
 SUBDIRS += tests
 endif
-SUBDIRS += data po src doc help utils
+SUBDIRS += data po src doc help
 
 DISTCHECK_CONFIGURE_FLAGS = --enable-introspection --enable-gtk-doc
 

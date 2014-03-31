@@ -13,6 +13,7 @@
 #include <grp.h>
 #include <glib.h>
 #include <security/pam_appl.h>
+#include <utmp.h>
 #include <utmpx.h>
 #include <sys/mman.h>
 
@@ -196,6 +197,29 @@ read_xauth (void)
     return x_authority_new (x_authority_family, x_authority_address, x_authority_address_length, x_authority_number, x_authority_name, x_authority_data, x_authority_data_length);
 }
 
+/* GNU provides this but we can't rely on that so let's make our own version */
+static void
+updwtmpx (const gchar *wtmp_file, struct utmpx *ut)
+{
+    struct utmp u;
+
+    memset (&u, 0, sizeof (u));
+    u.ut_type = ut->ut_type;
+    u.ut_pid = ut->ut_pid;
+    if (ut->ut_line)
+        strncpy (u.ut_line, ut->ut_line, sizeof (u.ut_line));
+    if (ut->ut_id)
+        strncpy (u.ut_id, ut->ut_id, sizeof (u.ut_id));
+    if (ut->ut_user)
+        strncpy (u.ut_user, ut->ut_user, sizeof (u.ut_user));
+    if (ut->ut_host)
+        strncpy (u.ut_host, ut->ut_host, sizeof (u.ut_host));
+    u.ut_tv.tv_sec = ut->ut_tv.tv_sec;
+    u.ut_tv.tv_usec = ut->ut_tv.tv_usec;
+  
+    updwtmp (wtmp_file, &u);
+}
+
 int
 session_child_run (int argc, char **argv)
 {
@@ -221,9 +245,6 @@ session_child_run (int argc, char **argv)
     GDBusConnection *bus;
     gchar *console_kit_cookie = NULL;
     gchar *login1_session = NULL;
-
-    const gchar *path;
-    GError *error = NULL;
     const gchar *locale_value;
     gchar *locale_var;
     static const gchar * const locale_var_names[] = {
@@ -237,6 +258,10 @@ session_child_run (int argc, char **argv)
         "LANG",
         NULL
     };
+    gid_t gid;
+    uid_t uid;
+    const gchar *home_directory;
+    GError *error = NULL;
 
 #if !defined(GLIB_VERSION_2_36)
     g_type_init ();
@@ -332,11 +357,39 @@ session_child_run (int argc, char **argv)
         g_free (username);
         username = g_strdup (new_username);
 
+        /* Write record to btmp database */
+        if (authentication_result == PAM_AUTH_ERR)
+        {
+            struct utmpx ut;
+            struct timeval tv;
+
+            memset (&ut, 0, sizeof (ut));
+            ut.ut_type = USER_PROCESS;
+            ut.ut_pid = getpid ();
+            if (xdisplay)
+            {
+                strncpy (ut.ut_line, xdisplay, sizeof (ut.ut_line));
+                strncpy (ut.ut_id, xdisplay, sizeof (ut.ut_id));
+            }
+            else if (tty)
+                strncpy (ut.ut_line, tty + strlen ("/dev/"), sizeof (ut.ut_line));
+            strncpy (ut.ut_user, username, sizeof (ut.ut_user));
+            if (xdisplay)
+                strncpy (ut.ut_host, xdisplay, sizeof (ut.ut_host));
+            else if (remote_host_name)
+                strncpy (ut.ut_host, remote_host_name, sizeof (ut.ut_host));
+            gettimeofday (&tv, NULL);
+            ut.ut_tv.tv_sec = tv.tv_sec;
+            ut.ut_tv.tv_usec = tv.tv_usec;
+
+            updwtmpx ("/var/log/btmp", &ut);
+        }
+
         /* Check account is valid */
         if (authentication_result == PAM_SUCCESS)
             authentication_result = pam_acct_mgmt (pam_handle, 0);
         if (authentication_result == PAM_NEW_AUTHTOK_REQD)
-            authentication_result = pam_chauthtok (pam_handle, 0);
+            authentication_result = pam_chauthtok (pam_handle, PAM_CHANGE_EXPIRED_AUTHTOK);
     }
     else
         authentication_result = PAM_SUCCESS;
@@ -422,17 +475,21 @@ session_child_run (int argc, char **argv)
 
     /* Redirect stderr to a log file */
     if (log_filename)
+    {
         log_backup_filename = g_strdup_printf ("%s.old", log_filename);
-    if (!log_filename)
+        if (g_path_is_absolute (log_filename))
+        {
+            rename (log_filename, log_backup_filename);
+            fd = open (log_filename, O_WRONLY | O_APPEND | O_CREAT, 0600);
+            dup2 (fd, STDERR_FILENO);
+            close (fd);
+            g_free (log_filename);
+            log_filename = NULL;
+        }
+    }
+    else
     {
         fd = open ("/dev/null", O_WRONLY);   
-        dup2 (fd, STDERR_FILENO);
-        close (fd);
-    }
-    else if (g_path_is_absolute (log_filename))
-    {
-        rename (log_filename, log_backup_filename);
-        fd = open (log_filename, O_WRONLY | O_APPEND | O_CREAT, 0600);
         dup2 (fd, STDERR_FILENO);
         close (fd);
     }
@@ -517,7 +574,7 @@ session_child_run (int argc, char **argv)
 
         drop_privileges = geteuid () == 0;
         if (drop_privileges)
-            privileges_drop (user);
+            privileges_drop (user_get_uid (user), user_get_gid (user));
         result = x_authority_write (x_authority, XAUTH_WRITE_MODE_REPLACE, x_authority_filename, &error);
         if (drop_privileges)
             privileges_reclaim ();
@@ -533,62 +590,50 @@ session_child_run (int argc, char **argv)
         g_free (value);
     }
 
-    /* Put our tools directory in the path as a hack so we can use the legacy gdmflexiserver interface */
-    path = pam_getenv (pam_handle, "PATH");
-    if (path)
-        pam_putenv (pam_handle, g_strdup_printf ("PATH=%s:%s", PKGLIBEXEC_DIR, path));
-
     /* Catch terminate signal and pass it to the child */
     signal (SIGTERM, signal_cb);
 
     /* Run the command as the authenticated user */
-    child_pid = fork (); 
+    uid = user_get_uid (user);
+    gid = user_get_gid (user);
+    home_directory = user_get_home_directory (user);
+    child_pid = fork ();
     if (child_pid == 0)
     {
-        // FIXME: This is not thread safe (particularly the printfs)
-
         /* Make this process its own session */
         if (setsid () < 0)
-            g_printerr ("Failed to make process a new session: %s\n", strerror (errno));
+            _exit (errno);
 
         /* Change to this user */
         if (getuid () == 0)
         {
-            if (setgid (user_get_gid (user)) != 0)
-            {
-                g_printerr ("Failed to set group ID to %d: %s\n", user_get_gid (user), strerror (errno));
-                _exit (EXIT_FAILURE);
-            }
+            if (setgid (gid) != 0)
+                _exit (errno);
 
-            if (setuid (user_get_uid (user)) != 0)
-            {
-                g_printerr ("Failed to set user ID to %d: %s\n", user_get_uid (user), strerror (errno));
-                _exit (EXIT_FAILURE);
-            }
+            if (setuid (uid) != 0)
+                _exit (errno);
         }
 
         /* Change working directory */
         /* NOTE: This must be done after the permissions are changed because NFS filesystems can
          * be setup so the local root user accesses the NFS files as 'nobody'.  If the home directories
          * are not system readable then the chdir can fail */
-        if (chdir (user_get_home_directory (user)) != 0)
-        {
-            g_printerr ("Failed to change to home directory %s: %s\n", user_get_home_directory (user), strerror (errno));
-            _exit (EXIT_FAILURE);
-        }
+        if (chdir (home_directory) != 0)
+            _exit (errno);
 
-        /* Redirect stderr to a log file */
-        if (log_filename && !g_path_is_absolute (log_filename))
+        if (log_filename)
         {
             rename (log_filename, log_backup_filename);
             fd = open (log_filename, O_WRONLY | O_APPEND | O_CREAT, 0600);
-            dup2 (fd, STDERR_FILENO);
-            close (fd);
+            if (fd >= 0)
+            {
+                dup2 (fd, STDERR_FILENO);
+                close (fd);
+            }
         }
 
         /* Run the command */
         execve (command_argv[0], command_argv, pam_getenvlist (pam_handle));
-        g_printerr ("Failed to run command: %s\n", strerror (errno));
         _exit (EXIT_FAILURE);
     }
 
@@ -611,10 +656,13 @@ session_child_run (int argc, char **argv)
             memset (&ut, 0, sizeof (ut));
             ut.ut_type = USER_PROCESS;
             ut.ut_pid = child_pid;
-            if (tty)
-                strncpy (ut.ut_line, tty + strlen ("/dev/"), sizeof (ut.ut_line));
             if (xdisplay)
+            {
+                strncpy (ut.ut_line, xdisplay, sizeof (ut.ut_line));
                 strncpy (ut.ut_id, xdisplay, sizeof (ut.ut_id));
+            }
+            else if (tty)
+                strncpy (ut.ut_line, tty + strlen ("/dev/"), sizeof (ut.ut_line));
             strncpy (ut.ut_user, username, sizeof (ut.ut_user));
             if (xdisplay)
                 strncpy (ut.ut_host, xdisplay, sizeof (ut.ut_host));
@@ -624,10 +672,12 @@ session_child_run (int argc, char **argv)
             ut.ut_tv.tv_sec = tv.tv_sec;
             ut.ut_tv.tv_usec = tv.tv_usec;
 
+            /* Write records to utmp/wtmp databases */
             setutxent ();
             if (!pututxline (&ut))
                 g_printerr ("Failed to write utmpx: %s\n", strerror (errno));
             endutxent ();
+            updwtmpx ("/var/log/wtmp", &ut);
         }
 
         waitpid (child_pid, &return_code, 0);
@@ -642,10 +692,13 @@ session_child_run (int argc, char **argv)
             memset (&ut, 0, sizeof (ut));
             ut.ut_type = DEAD_PROCESS;
             ut.ut_pid = child_pid;
-            if (tty)
-                strncpy (ut.ut_line, tty + strlen ("/dev/"), sizeof (ut.ut_line));
             if (xdisplay)
+            {
+                strncpy (ut.ut_line, xdisplay, sizeof (ut.ut_line));
                 strncpy (ut.ut_id, xdisplay, sizeof (ut.ut_id));
+            }
+            else if (tty)
+                strncpy (ut.ut_line, tty + strlen ("/dev/"), sizeof (ut.ut_line));
             strncpy (ut.ut_user, username, sizeof (ut.ut_user));
             if (xdisplay)
                 strncpy (ut.ut_host, xdisplay, sizeof (ut.ut_host));
@@ -655,10 +708,12 @@ session_child_run (int argc, char **argv)
             ut.ut_tv.tv_sec = tv.tv_sec;
             ut.ut_tv.tv_usec = tv.tv_usec;
 
+            /* Write records to utmp/wtmp databases */
             setutxent ();
             if (!pututxline (&ut))
                 g_printerr ("Failed to write utmpx: %s\n", strerror (errno));
             endutxent ();
+            updwtmpx ("/var/log/wtmp", &ut);
         }
     }
 
@@ -670,7 +725,7 @@ session_child_run (int argc, char **argv)
 
         drop_privileges = geteuid () == 0;
         if (drop_privileges)
-            privileges_drop (user);
+            privileges_drop (user_get_uid (user), user_get_gid (user));
         result = x_authority_write (x_authority, XAUTH_WRITE_MODE_REMOVE, x_authority_filename, &error);
         if (drop_privileges)
             privileges_reclaim ();

@@ -1,22 +1,30 @@
+#define _GNU_SOURCE
+#define __USE_GNU
+
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <pwd.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <grp.h>
 #include <security/pam_appl.h>
 #include <fcntl.h>
-#define __USE_GNU
 #include <dlfcn.h>
+#include <utmp.h>
+#include <utmpx.h>
 #ifdef __linux__
 #include <linux/vt.h>
 #endif
 #include <glib.h>
 #include <xcb/xcb.h>
 #include <gio/gunixsocketaddress.h>
+
+#include "status.h"
 
 #define LOGIN_PROMPT "login:"
 
@@ -30,6 +38,19 @@ static GList *group_entries = NULL;
 static int active_vt = 7;
 
 static gboolean status_connected = FALSE;
+static GKeyFile *config;
+
+static void connect_status (void)
+{
+    if (status_connected)
+        return;
+    status_connected = TRUE;
+
+    status_connect (NULL, NULL);
+
+    config = g_key_file_new ();
+    g_key_file_load_from_file (config, g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "script", NULL), G_KEY_FILE_NONE, NULL);
+}
 
 struct pam_handle
 {
@@ -154,9 +175,6 @@ setresuid (uid_t ruid, uid_t uuid, uid_t suid)
 static gchar *
 redirect_path (const gchar *path)
 {
-    size_t offset;
-    gboolean matches;
-
     // Don't redirect if inside the running directory
     if (g_str_has_prefix (path, g_getenv ("LIGHTDM_TEST_ROOT")))
         return g_strdup (path);
@@ -175,7 +193,13 @@ redirect_path (const gchar *path)
         return g_strdup (path);
 
     if (g_str_has_prefix (path, "/tmp"))
-        return g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "tmp", path + strlen ("tmp"), NULL);
+        return g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "tmp", path + strlen ("/tmp"), NULL);
+
+    if (g_str_has_prefix (path, "/etc/xdg"))
+        return g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "etc", "xdg", path + strlen ("/etc/xdg"), NULL);
+
+    if (g_str_has_prefix (path, "/usr/share/lightdm"))
+        return g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "usr", "share", "lightdm", path + strlen ("/usr/share/lightdm"), NULL);
 
     return g_strdup (path);
 }
@@ -252,6 +276,22 @@ fopen (const char *path, const char *mode)
 }
 
 int
+unlinkat (int dirfd, const char *pathname, int flags)
+{
+    int (*_unlinkat) (int dirfd, const char *pathname, int flags);
+    gchar *new_path = NULL;
+    int result;
+
+    _unlinkat = (int (*)(int dirfd, const char *pathname, int flags)) dlsym (RTLD_NEXT, "unlinkat");
+
+    new_path = redirect_path (pathname);
+    result = _unlinkat (dirfd, new_path, flags);
+    g_free (new_path);
+
+    return result;
+}
+
+int
 creat (const char *pathname, mode_t mode)
 {
     int (*_creat) (const char *pathname, mode_t mode);
@@ -320,13 +360,13 @@ stat (const char *path, struct stat *buf)
 }
 
 int
-stat64 (const char *path, struct stat *buf)
+stat64 (const char *path, struct stat64 *buf)
 {
-    int (*_stat64) (const char *path, struct stat *buf);
+    int (*_stat64) (const char *path, struct stat64 *buf);
     gchar *new_path = NULL;
     int ret;
 
-    _stat64 = (int (*)(const char *path, struct stat *buf)) dlsym (RTLD_NEXT, "stat64");
+    _stat64 = (int (*)(const char *path, struct stat64 *buf)) dlsym (RTLD_NEXT, "stat64");
 
     new_path = redirect_path (path);
     ret = _stat64 (new_path, buf);
@@ -352,16 +392,48 @@ __xstat (int version, const char *path, struct stat *buf)
 }
 
 int
-__xstat64 (int version, const char *path, struct stat *buf)
+__xstat64 (int version, const char *path, struct stat64 *buf)
 {
-    int (*___xstat64) (int version, const char *path, struct stat *buf);
+    int (*___xstat64) (int version, const char *path, struct stat64 *buf);
     gchar *new_path = NULL;
     int ret;
   
-    ___xstat64 = (int (*)(int version, const char *path, struct stat *buf)) dlsym (RTLD_NEXT, "__xstat64");
+    ___xstat64 = (int (*)(int version, const char *path, struct stat64 *buf)) dlsym (RTLD_NEXT, "__xstat64");
 
     new_path = redirect_path (path);
     ret = ___xstat64 (version, new_path, buf);
+    g_free (new_path);
+
+    return ret;
+}
+
+int
+__fxstatat(int ver, int dirfd, const char *pathname, struct stat *buf, int flags)
+{
+    int (*___fxstatat) (int ver, int dirfd, const char *pathname, struct stat *buf, int flags);
+    gchar *new_path = NULL;
+    int ret;
+  
+    ___fxstatat = (int (*)(int ver, int dirfd, const char *pathname, struct stat *buf, int flags)) dlsym (RTLD_NEXT, "__fxstatat");
+
+    new_path = redirect_path (pathname);
+    ret = ___fxstatat (ver, dirfd, new_path, buf, flags);
+    g_free (new_path);
+
+    return ret;
+}
+
+int
+__fxstatat64(int ver, int dirfd, const char *pathname, struct stat64 *buf, int flags)
+{
+    int (*___fxstatat64) (int ver, int dirfd, const char *pathname, struct stat64 *buf, int flags);
+    gchar *new_path = NULL;
+    int ret;
+  
+    ___fxstatat64 = (int (*)(int ver, int dirfd, const char *pathname, struct stat64 *buf, int flags)) dlsym (RTLD_NEXT, "__fxstatat64");
+
+    new_path = redirect_path (pathname);
+    ret = ___fxstatat64 (ver, dirfd, new_path, buf, flags);
     g_free (new_path);
 
     return ret;
@@ -402,17 +474,8 @@ mkdir (const char *pathname, mode_t mode)
 int
 chown (const char *pathname, uid_t owner, gid_t group)
 {
-    int (*_chown) (const char *pathname, uid_t owner, gid_t group);
-    gchar *new_path = NULL;
-    int result;
-
-    _chown = (int (*)(const char *pathname, uid_t owner, gid_t group)) dlsym (RTLD_NEXT, "chown");
-
-    new_path = redirect_path (pathname);
-    result = _chown (new_path, owner, group);
-    g_free (new_path);
-
-    return result;
+    /* Just fake it - we're not root */
+    return 0;
 }
 
 int
@@ -432,30 +495,33 @@ chmod (const char *path, mode_t mode)
 }
 
 int
-ioctl (int d, int request, void *data)
+ioctl (int d, unsigned long request, ...)
 {
-    int (*_ioctl) (int d, int request, void *data);
+    int (*_ioctl) (int d, int request, ...);
 
-    _ioctl = (int (*)(int d, int request, void *data)) dlsym (RTLD_NEXT, "ioctl");
+    _ioctl = (int (*)(int d, int request, ...)) dlsym (RTLD_NEXT, "ioctl");
     if (d > 0 && d == console_fd)
     {
         struct vt_stat *console_state;
-        int *n;
         int vt;
+        va_list ap;
 
         switch (request)
         {
         case VT_GETSTATE:
-            console_state = data;
+            va_start (ap, request);
+            console_state = va_arg (ap, struct vt_stat *);
+            va_end (ap);
             console_state->v_active = active_vt;
             break;
         case VT_ACTIVATE:
-            vt = GPOINTER_TO_INT (data);
+            va_start (ap, request);
+            vt = va_arg (ap, int);
+            va_end (ap);
             if (vt != active_vt)
             {
                 active_vt = vt;
-                if (!status_connected)
-                    status_connected = status_connect (NULL);
+                connect_status ();
                 status_notify ("VT ACTIVATE VT=%d", active_vt);
             }
             break;
@@ -465,7 +531,15 @@ ioctl (int d, int request, void *data)
         return 0;
     }
     else
+    {
+        va_list ap;
+        void *data;
+
+        va_start (ap, request);
+        data = va_arg (ap, void *);
+        va_end (ap);
         return _ioctl (d, request, data);
+    }
 }
 
 int
@@ -495,7 +569,7 @@ free_user (gpointer data)
 }
 
 static void
-load_passwd_file ()
+load_passwd_file (void)
 {
     gchar *path, *data = NULL, **lines;
     gint i;
@@ -627,7 +701,7 @@ free_group (gpointer data)
 }
 
 static void
-load_group_file ()
+load_group_file (void)
 {
     gchar *path, *data = NULL, **lines;
     gint i;
@@ -1194,7 +1268,10 @@ pam_chauthtok (pam_handle_t *pamh, int flags)
     msg = malloc (sizeof (struct pam_message *) * 1);
     msg[0] = malloc (sizeof (struct pam_message));
     msg[0]->msg_style = PAM_PROMPT_ECHO_OFF;
-    msg[0]->msg = "Enter new password:";
+    if ((flags & PAM_CHANGE_EXPIRED_AUTHTOK) != 0)
+        msg[0]->msg = "Enter new password (expired):";
+    else
+        msg[0]->msg = "Enter new password:";
     result = pamh->conversation.conv (1, (const struct pam_message **) msg, &resp, pamh->conversation.appdata_ptr);
     free (msg[0]);
     free (msg);
@@ -1372,16 +1449,91 @@ void
 setutxent (void)
 {
 }
-  
-struct utmp *
-pututxline (struct utmp *ut)
+
+struct utmpx *
+pututxline (const struct utmpx *ut)
 {
-    return ut;
+    connect_status ();
+    if (g_key_file_get_boolean (config, "test-utmp-config", "check-events", NULL))
+    {
+        GString *status;
+
+        status = g_string_new ("UTMP");
+        switch (ut->ut_type)
+        {
+        case INIT_PROCESS:
+            g_string_append_printf (status, " TYPE=INIT_PROCESS");
+            break;
+        case LOGIN_PROCESS:
+            g_string_append_printf (status, " TYPE=LOGIN_PROCESS");
+            break;
+        case USER_PROCESS:
+            g_string_append_printf (status, " TYPE=USER_PROCESS");
+            break;
+        case DEAD_PROCESS:
+            g_string_append_printf (status, " TYPE=DEAD_PROCESS");
+            break;
+        default:
+            g_string_append_printf (status, " TYPE=%d", ut->ut_type);
+        }
+        if (ut->ut_line)
+            g_string_append_printf (status, " LINE=%s", ut->ut_line);
+        if (ut->ut_id)
+            g_string_append_printf (status, " ID=%s", ut->ut_id);
+        if (ut->ut_user)
+            g_string_append_printf (status, " USER=%s", ut->ut_user);
+        if (ut->ut_host)
+            g_string_append_printf (status, " HOST=%s", ut->ut_host);
+        status_notify ("%s", status->str);
+        g_string_free (status, TRUE);
+    }
+
+    return (struct utmpx *)ut;
 }
 
 void
 endutxent (void)
 {
+}
+
+void
+updwtmp (const char *wtmp_file, const struct utmp *ut)
+{
+    connect_status ();
+    if (g_key_file_get_boolean (config, "test-utmp-config", "check-events", NULL))
+    {
+        GString *status;
+
+        status = g_string_new ("WTMP");
+        g_string_append_printf (status, " FILE=%s", wtmp_file);
+        switch (ut->ut_type)
+        {
+        case INIT_PROCESS:
+            g_string_append_printf (status, " TYPE=INIT_PROCESS");
+            break;
+        case LOGIN_PROCESS:
+            g_string_append_printf (status, " TYPE=LOGIN_PROCESS");
+            break;
+        case USER_PROCESS:
+            g_string_append_printf (status, " TYPE=USER_PROCESS");
+            break;
+        case DEAD_PROCESS:
+            g_string_append_printf (status, " TYPE=DEAD_PROCESS");
+            break;
+        default:
+            g_string_append_printf (status, " TYPE=%d", ut->ut_type);
+        }
+        if (ut->ut_line)
+            g_string_append_printf (status, " LINE=%s", ut->ut_line);
+        if (ut->ut_id)
+            g_string_append_printf (status, " ID=%s", ut->ut_id);
+        if (ut->ut_user)
+            g_string_append_printf (status, " USER=%s", ut->ut_user);
+        if (ut->ut_host)
+            g_string_append_printf (status, " HOST=%s", ut->ut_host);
+        status_notify ("%s", status->str);
+        g_string_free (status, TRUE);
+    }
 }
 
 struct xcb_connection_t

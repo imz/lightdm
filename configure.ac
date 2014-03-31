@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT(lightdm, 1.9.3)
+AC_INIT(lightdm, 1.9.13)
 AC_CONFIG_MACRO_DIR(m4)
 AC_CONFIG_HEADER(config.h)
 AM_INIT_AUTOMAKE([1.11 no-dist-gzip dist-xz foreign])
@@ -23,8 +23,10 @@ if test "x$GCC" == xyes; then
                  -Werror=format-security \
                  -Werror=format=2 \
                  -Werror=missing-include-dirs"
+    WARN_CXXFLAGS="-Wall"
 fi
 AC_SUBST(WARN_CFLAGS)
+AC_SUBST(WARN_CXXFLAGS)
 
 GOBJECT_INTROSPECTION_CHECK(0.9.5)
 
@@ -96,7 +98,7 @@ AC_ARG_ENABLE(liblightdm-qt,
 	[enable_liblightdm_qt4=$enableval],
 	[enable_liblightdm_qt4="auto"])
 compile_liblightdm_qt4=no
-if test x"$enable_liblightdm_qt4" != "xno"; then
+if test x"$enable_liblightdm_qt4" = "xyes" -o \( x"$enable_liblightdm_qt4" = "xauto" -a x$compile_liblightdm_gobject = xyes \) ; then
     PKG_CHECK_MODULES(LIBLIGHTDM_QT4, [
         QtCore
         QtDBus
@@ -106,6 +108,10 @@ if test x"$enable_liblightdm_qt4" != "xno"; then
      AC_CHECK_TOOLS(MOC4, [moc-qt4 moc])
      if test x"$(readlink $(which $MOC4))" = xqtchooser; then
          MOC4="$MOC4 --qt=qt4"
+     fi
+     if test "x$compile_liblightdm_gobject" != xyes; then
+         AC_MSG_FAILURE(
+           [liblightdm-gobject is required to compile liblightdm-qt])
      fi
     ],
     [if test "x$enable_liblightdm_qt4" != xauto; then
@@ -205,6 +211,7 @@ dnl ###########################################################################
 
 AC_CONFIG_FILES([
 Makefile
+common/Makefile
 data/Makefile
 doc/Makefile
 help/Makefile
@@ -217,7 +224,6 @@ po/Makefile.in
 src/Makefile
 tests/Makefile
 tests/src/Makefile
-utils/Makefile
 ])
 AC_OUTPUT
 

@@ -67,9 +67,13 @@ void seat_set_property (Seat *seat, const gchar *name, const gchar *value);
 
 const gchar *seat_get_string_property (Seat *seat, const gchar *name);
 
+gchar **seat_get_string_list_property (Seat *seat, const gchar *name);
+
 gboolean seat_get_boolean_property (Seat *seat, const gchar *name);
 
 gint seat_get_integer_property (Seat *seat, const gchar *name);
+
+const gchar *seat_get_name (Seat *seat);
 
 void seat_set_can_switch (Seat *seat, gboolean can_switch);
 

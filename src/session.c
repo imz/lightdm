@@ -26,6 +26,7 @@
 #include "console-kit.h"
 #include "login1.h"
 #include "guest-account.h"
+#include "shared-data-manager.h"
 
 enum {
     GOT_MESSAGES,
@@ -318,7 +319,7 @@ session_unset_env (Session *session, const gchar *name)
         return;
 
     g_free (link->data);
-    session->priv->env = g_list_remove_link (session->priv->env, link);
+    session->priv->env = g_list_delete_link (session->priv->env, link);
 }
 
 void
@@ -421,6 +422,8 @@ static void
 session_watch_cb (GPid pid, gint status, gpointer data)
 {
     Session *session = data;
+
+    session->priv->child_watch = 0;
 
     if (WIFEXITED (status))
         l_debug (session, "Exited with return value %d", WEXITSTATUS (status));
@@ -546,6 +549,7 @@ session_real_start (Session *session)
     int version;
     int to_child_pipe[2], from_child_pipe[2];
     int to_child_output, from_child_input;
+    gchar *arg0, *arg1;
 
     g_return_val_if_fail (session->priv->pid == 0, FALSE);
 
@@ -578,23 +582,25 @@ session_real_start (Session *session)
     }
 
     /* Run the child */
+    arg0 = g_strdup_printf ("%d", to_child_output);
+    arg1 = g_strdup_printf ("%d", from_child_input);
     session->priv->pid = fork ();
-    if (session->priv->pid < 0)
-    {
-        g_debug ("Failed to fork session child process: %s", strerror (errno));
-        return FALSE;
-    }
-
     if (session->priv->pid == 0)
     {
         /* Run us again in session child mode */
         execlp ("lightdm",
                 "lightdm",
                 "--session-child",
-                g_strdup_printf ("%d", to_child_output),
-                g_strdup_printf ("%d", from_child_input),
-                NULL);
+                arg0, arg1, NULL);
         _exit (EXIT_FAILURE);
+    }
+    g_free (arg0);
+    g_free (arg1);
+
+    if (session->priv->pid < 0)
+    {
+        g_debug ("Failed to fork session child process: %s", strerror (errno));
+        return FALSE;
     }
 
     /* Hold a reference on this object until the child process terminates so we
@@ -762,6 +768,17 @@ session_real_run (Session *session)
     else
         x_authority_filename = g_build_filename (user_get_home_directory (session_get_user (session)), ".Xauthority", NULL);
 
+    /* Make sure shared user directory for this user exists */
+    if (!session->priv->remote_host_name)
+    {
+        gchar *data_dir = shared_data_manager_ensure_user_dir (shared_data_manager_get_instance (), session->priv->username);
+        if (data_dir)
+        {
+            session_set_env (session, "XDG_GREETER_DATA_DIR", data_dir);
+            g_free (data_dir);
+        }
+    }
+
     if (session->priv->log_filename)
         l_debug (session, "Logging to %s", session->priv->log_filename);
     write_string (session, session->priv->log_filename);
@@ -808,6 +825,19 @@ session_unlock (Session *session)
             login1_unlock_session (session->priv->login1_session);
         else if (session->priv->console_kit_cookie)
             ck_unlock_session (session->priv->console_kit_cookie);
+    }
+}
+
+void
+session_activate (Session *session)
+{
+    g_return_if_fail (session != NULL);
+    if (getuid () == 0)
+    {
+        if (session->priv->login1_session)
+            login1_activate_session (session->priv->login1_session);
+        else if (session->priv->console_kit_cookie)
+            ck_activate_session (session->priv->console_kit_cookie);
     }
 }
 

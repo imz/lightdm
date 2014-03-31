@@ -14,6 +14,7 @@
 #include "seat-xlocal.h"
 #include "configuration.h"
 #include "x-server-local.h"
+#include "unity-system-compositor.h"
 #include "plymouth.h"
 #include "vt.h"
 
@@ -36,44 +37,74 @@ seat_xlocal_setup (Seat *seat)
 static gboolean
 seat_xlocal_start (Seat *seat)
 {
-   
     return SEAT_CLASS (seat_xlocal_parent_class)->start (seat);
 }
 
 static void
-x_server_ready_cb (XServerLocal *x_server, Seat *seat)
+display_server_ready_cb (DisplayServer *display_server, Seat *seat)
 {
     /* Quit Plymouth */
     plymouth_quit (TRUE);
 }
 
 static void
-x_server_transition_plymouth_cb (XServerLocal *x_server, Seat *seat)
+display_server_transition_plymouth_cb (DisplayServer *display_server, Seat *seat)
 {
     /* Quit Plymouth if we didn't do the transition */
     if (plymouth_get_is_running ())
         plymouth_quit (FALSE);
 
-    g_signal_handlers_disconnect_matched (x_server, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, x_server_transition_plymouth_cb, NULL);
+    g_signal_handlers_disconnect_matched (display_server, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, display_server_transition_plymouth_cb, NULL);
+}
+
+static gint
+get_vt (Seat *seat, DisplayServer *display_server)
+{
+    gint vt = -1;
+    const gchar *xdg_seat = seat_get_string_property (seat, "xdg-seat");
+
+    /* If Plymouth is running, stop it */
+    if (plymouth_get_is_active () && plymouth_has_active_vt ())
+    {
+        gint active_vt = vt_get_active ();
+        if (active_vt >= vt_get_min ())
+        {
+            vt = active_vt;
+            g_signal_connect (display_server, "ready", G_CALLBACK (display_server_ready_cb), seat);
+            g_signal_connect (display_server, "stopped", G_CALLBACK (display_server_transition_plymouth_cb), seat);
+            plymouth_deactivate ();
+        }
+        else
+            l_debug (seat, "Plymouth is running on VT %d, but this is less than the configured minimum of %d so not replacing it", active_vt, vt_get_min ());
+    }
+    if (plymouth_get_is_active ())
+        plymouth_quit (FALSE);
+    if (!xdg_seat)
+        xdg_seat = "seat0";
+    if (vt < 0 && g_strcmp0 (xdg_seat, "seat0") == 0)
+        vt = vt_get_unused ();
+
+    return vt;
 }
 
 static DisplayServer *
-seat_xlocal_create_display_server (Seat *seat, const gchar *session_type)
-{  
-    if (strcmp (session_type, "x") != 0)
-        return NULL;
-
+create_x_server (Seat *seat)
+{
     XServerLocal *x_server;
-    const gchar *command = NULL, *layout = NULL, *config_file = NULL, *xdmcp_manager = NULL, *key_name = NULL, *xdg_seat = NULL;
+    const gchar *command = NULL, *layout = NULL, *config_file = NULL, *xdmcp_manager = NULL, *key_name = NULL;
     gboolean allow_tcp;
-    gint vt = -1, port = 0;
+    gint vt, port = 0;
+
+    x_server = x_server_local_new ();
+
+    vt = get_vt (seat, DISPLAY_SERVER (x_server));
+    if (vt >= 0)
+        x_server_local_set_vt (x_server, vt);
 
     if (vt > 0)
         l_debug (seat, "Starting local X display on VT %d", vt);
     else
         l_debug (seat, "Starting local X display");
-  
-    x_server = x_server_local_new ();
 
     /* If running inside an X server use Xephyr instead */
     if (g_getenv ("DISPLAY"))
@@ -83,34 +114,11 @@ seat_xlocal_create_display_server (Seat *seat, const gchar *session_type)
     if (command)
         x_server_local_set_command (x_server, command);
 
-    /* If Plymouth is running, stop it */
-    if (plymouth_get_is_active () && plymouth_has_active_vt ())
-    {
-        gint active_vt = vt_get_active ();
-        if (active_vt >= vt_get_min ())
-        {
-            vt = active_vt;
-            g_signal_connect (x_server, "ready", G_CALLBACK (x_server_ready_cb), seat);
-            g_signal_connect (x_server, "stopped", G_CALLBACK (x_server_transition_plymouth_cb), seat);
-            plymouth_deactivate ();
-        }
-        else
-            l_debug (seat, "Plymouth is running on VT %d, but this is less than the configured minimum of %d so not replacing it", active_vt, vt_get_min ());
-    }
-    if (plymouth_get_is_active ())
-        plymouth_quit (FALSE);
-    if (vt < 0)
-        vt = vt_get_unused ();
-    if (vt >= 0)
-        x_server_local_set_vt (x_server, vt);
-
     layout = seat_get_string_property (seat, "xserver-layout");
     if (layout)
         x_server_local_set_layout (x_server, layout);
-        
-    xdg_seat = seat_get_string_property (seat, "xdg-seat");
-    if (xdg_seat)
-        x_server_local_set_xdg_seat (x_server, xdg_seat);
+
+    x_server_local_set_xdg_seat (x_server, seat_get_name (seat));
 
     config_file = seat_get_string_property (seat, "xserver-config");
     if (config_file)
@@ -166,18 +174,62 @@ seat_xlocal_create_display_server (Seat *seat, const gchar *session_type)
     return DISPLAY_SERVER (x_server);
 }
 
+static DisplayServer *
+create_unity_system_compositor (Seat *seat)
+{
+    UnitySystemCompositor *compositor;
+    const gchar *command;
+    gchar *socket_name;
+    gint vt, timeout, i;
+
+    compositor = unity_system_compositor_new ();
+
+    command = seat_get_string_property (seat, "unity-compositor-command");
+    if (command)
+        unity_system_compositor_set_command (compositor, command);
+
+    timeout = seat_get_integer_property (seat, "unity-compositor-timeout");
+    if (timeout <= 0)
+        timeout = 60;
+    unity_system_compositor_set_timeout (compositor, timeout);
+
+    vt = get_vt (seat, DISPLAY_SERVER (compositor));
+    if (vt >= 0)
+        unity_system_compositor_set_vt (compositor, vt);
+  
+    for (i = 0; ; i++)
+    {
+        socket_name = g_strdup_printf ("/tmp/lightdm-mir-%d", i);
+        if (!g_file_test (socket_name, G_FILE_TEST_EXISTS))
+            break;
+    }
+    unity_system_compositor_set_socket (compositor, socket_name);
+    g_free (socket_name);
+
+    return DISPLAY_SERVER (compositor);
+}
+
+static DisplayServer *
+seat_xlocal_create_display_server (Seat *seat, const gchar *session_type)
+{
+    if (strcmp (session_type, "x") == 0)
+        return create_x_server (seat);
+    else if (strcmp (session_type, "mir") == 0)
+        return create_unity_system_compositor (seat);
+    else
+    {
+        l_warning (seat, "Can't create unsupported display server '%s'", session_type);
+        return NULL;
+    }
+}
+
 static Greeter *
 seat_xlocal_create_greeter_session (Seat *seat)
 {
     Greeter *greeter_session;
-    const gchar *xdg_seat;
 
     greeter_session = SEAT_CLASS (seat_xlocal_parent_class)->create_greeter_session (seat);
-    xdg_seat = seat_get_string_property (seat, "xdg-seat");
-    if (!xdg_seat)
-        xdg_seat = "seat0";
-    l_debug (seat, "Setting XDG_SEAT=%s", xdg_seat);
-    session_set_env (SESSION (greeter_session), "XDG_SEAT", xdg_seat);
+    session_set_env (SESSION (greeter_session), "XDG_SEAT", seat_get_name (seat));
 
     return greeter_session;
 }
@@ -186,14 +238,9 @@ static Session *
 seat_xlocal_create_session (Seat *seat)
 {
     Session *session;
-    const gchar *xdg_seat;
 
     session = SEAT_CLASS (seat_xlocal_parent_class)->create_session (seat);
-    xdg_seat = seat_get_string_property (seat, "xdg-seat");
-    if (!xdg_seat)
-        xdg_seat = "seat0";
-    l_debug (seat, "Setting XDG_SEAT=%s", xdg_seat);
-    session_set_env (SESSION (session), "XDG_SEAT", xdg_seat);
+    session_set_env (SESSION (session), "XDG_SEAT", seat_get_name (seat));
 
     return session;
 }

@@ -1,3 +1,78 @@
+Overview of changes in lightdm 1.9.13
+
+    * Handle not getting an X connection when attempting to get X layouts.
+    * Read config data from both XDG_DATA_DIRS and XDG_CONFIG_DIRS.
+
+Overview of changes in lightdm 1.9.12
+
+    * Ensure X authority is written before X server is started
+    * Activate after unlocking a logind session
+
+Overview of changes in lightdm 1.9.11
+
+    * Don't use g_hash_table_get_keys_as_array, it's a glib 2.40 feature
+
+Overview of changes in lightdm 1.9.10
+
+    * Honour session type requested by greeter for guest sessions
+    * Log to wtmp and btmp.
+    * Implement guest-session config option
+
+Overview of changes in lightdm 1.9.9
+
+    * Handle signals being received in child processes instead of treating them
+      like they are received in the daemon.
+    * Set utmp ut_line to the display name (i.e. :0) to match what other
+      programs expect (e.g. 'w').
+    * Fix lightdm_greeter_ensure_shared_data_dir_sync returning the wrong value.
+    * Fix shared data tests so you can run test suite without root again.
+    * Be extra careful not to call any non thread safe function after a fork.
+    * Fix some small memory leaks detected by valgrind.
+    * Fix process shutdown code to stop generating confusing warnings
+    * Fix more double removal of source IDs.
+    * Test improvements.
+
+Overview of changes in lightdm 1.9.8
+
+    * Add support for shared user data directories between the greeter and user sessions.
+    * Refactor LightDMUser and User classes to use the same code internally.
+
+Overview of changes in lightdm 1.9.7
+
+    * Correctly invoke PAM to change authentication token.
+    * Make xdg-seat a core property of a seat and always pass it to X servers.
+    * Qt bindings: properly hand over prompt and message type.
+    * Add warning flags where they are missing and fix the resulting warnings.
+
+Overview of changes in lightdm 1.9.6
+
+    * Support Mir sessions in xlocal seats by starting a unity system compositor
+      for each session.
+    * Add --screen and --fullscreen options to "dm-tool add-nested-seat"
+    * Don't try to compile liblightdm-qt if liblightdm-gobject will not be
+      compiled.
+    * Stop greeters warning if sessions directories not present or lightdm.conf
+      doesn't exist - this is valid.
+    * Fix log name for Mir display servers
+    * Fix double removal of source IDs
+
+Overview of changes in lightdm 1.9.5
+
+    * In the unity seat, if we don't have proper VT support, fake VT 0 instead
+      of a real VT number. This matches what logind expects.
+
+Overview of changes in lightdm 1.9.4
+
+    * Fix issue where VTs are double used when switching sessions.
+    * Remove lightdm-set-defaults and gdmflexiserver.
+    * Add new ability to specify a list of seat types to try, rather than just
+      one.
+    * Allow Mir sessions in the surfaceflinger seat.
+    * Rename the guest session wrapper to have a simpler name.
+    * Make sure sessions are associated with the display server before starting
+      them.
+    * Add a dm-tool man page.
+
 Overview of changes in lightdm 1.9.3
 
     * Don't pass system user accounts from AccountsService to greeters.
