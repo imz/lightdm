@@ -325,13 +325,13 @@ load_passwd_file (CommonUserList *user_list, gboolean emit_add_signal)
 
     value = g_key_file_get_string (config, "UserList", "hidden-users", NULL);
     if (!value)
-        value = g_strdup ("nobody nobody4 noaccess");
+        value = g_strdup ("nobody uucp");
     hidden_users = g_strsplit (value, " ", -1);
     g_free (value);
 
     value = g_key_file_get_string (config, "UserList", "hidden-shells", NULL);
     if (!value)
-        value = g_strdup ("/bin/false /usr/sbin/nologin");
+        value = g_strdup ("/bin/false /bin/nologin /dev/null");
     hidden_shells = g_strsplit (value, " ", -1);
     g_free (value);
 
