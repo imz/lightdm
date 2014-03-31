@@ -5,7 +5,7 @@
 %def_enable qt
 
 Name: lightdm
-Version: 1.9.3
+Version: 1.9.13
 Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
@@ -226,8 +226,8 @@ echo "GDK_CORE_DEVICE_EVENTS=true" > %_localstatedir/lib/ldm/.pam_environment
 %_datadir/gtk-doc/html/*
 
 %changelog
-* Fri Mar 28 2014 Alexey Shabalin <shaba@altlinux.ru> 1.9.3-alt1
-- 1.9.3
+* Mon Mar 31 2014 Alexey Shabalin <shaba@altlinux.ru> 1.9.13-alt1
+- 1.9.13
 
 * Tue May 28 2013 Alexey Shabalin <shaba@altlinux.ru> 1.7.0-alt1
 - 1.7.0
