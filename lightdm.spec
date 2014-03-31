@@ -154,7 +154,7 @@ mkdir -p %buildroot%_sysconfdir/pam.d
 mkdir -p %buildroot%_localstatedir/log/%name
 mkdir -p %buildroot%_localstatedir/cache/%name
 mkdir -p %buildroot%_localstatedir/run/%name
-mkdir -p %buildroot%_localstatedir/lib/{lightdm,lightdm-data}
+mkdir -p %buildroot%_localstatedir/lib/{lightdm-data,ldm}
 
 # install pam config
 install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
@@ -169,6 +169,7 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
 install -Dpm 644 %SOURCE6 %buildroot/lib/tmpfiles.d/lightdm.conf
 install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
+echo "GDK_CORE_DEVICE_EVENTS=true" > %_localstatedir/lib/ldm/.pam_environment
 
 %find_lang --with-gnome %name
 
@@ -190,7 +191,8 @@ install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
 %_libexecdir/*
 %attr(775,root,_ldm) %dir %_localstatedir/log/%name
 %attr(775,_ldm,_ldm) %dir %_localstatedir/cache/%name
-%attr(750,_ldm,_ldm) %dir %_localstatedir/lib/lightdm
+%attr(750,_ldm,_ldm) %dir %_localstatedir/lib/ldm
+%attr(640,_ldm,_ldm) %_localstatedir/lib/ldm/.pam_environment
 %attr(750,_ldm,_ldm) %dir %_localstatedir/lib/lightdm-data
 %attr(775,_ldm,_ldm) %dir %_localstatedir/run/%name
 /lib/tmpfiles.d/lightdm.conf
