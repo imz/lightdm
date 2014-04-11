@@ -1,0 +1,19 @@
+--- lightdm-1.9.13/data/lightdm.conf~	2014-04-11 16:15:33.996000000 +0400
++++ lightdm-1.9.13/data/lightdm.conf	2014-04-11 16:17:24.132000000 +0400
+@@ -19,7 +19,7 @@
+ #start-default-seat=true
+ #greeter-user=lightdm
+ #minimum-display-number=0
+-minimum-vt=7
++minimum-vt=1
+ #lock-memory=true
+ user-authority-in-system-dir=true
+ #guest-account-script=guest-account
+@@ -74,6 +74,7 @@ sessions-directory=/etc/lightdm/sessions
+ #type=xlocal
+ #xdg-seat=seat0
+ #xserver-command=X
++xserver-command=/etc/X11/xinit/xserverrc
+ #xserver-layout=
+ #xserver-config=
+ #xserver-allow-tcp=false
