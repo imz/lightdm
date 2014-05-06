@@ -12,11 +12,12 @@
 #define LIGHTDM_GREETER_H_
 
 #include <glib-object.h>
+#include <gio/gio.h>
 
 G_BEGIN_DECLS
 
 #define LIGHTDM_TYPE_GREETER            (lightdm_greeter_get_type())
-#define LIGHTDM_GREETER(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), LIGHTDM_TYPE_GREETER, LightDMGreeter));
+#define LIGHTDM_GREETER(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), LIGHTDM_TYPE_GREETER, LightDMGreeter))
 #define LIGHTDM_GREETER_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST ((klass), LIGHTDM_TYPE_GREETER, LightDMGreeterClass))
 #define LIGHTDM_IS_GREETER(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), LIGHTDM_TYPE_GREETER))
 #define LIGHTDM_IS_GREETER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), LIGHTDM_TYPE_GREETER))
@@ -57,19 +58,27 @@ typedef struct
     void (*show_prompt)(LightDMGreeter *greeter, const gchar *text, LightDMPromptType type);
     void (*authentication_complete)(LightDMGreeter *greeter);
     void (*autologin_timer_expired)(LightDMGreeter *greeter);
+    void (*idle)(LightDMGreeter *greeter);
+    void (*reset)(LightDMGreeter *greeter);
 
     /* Reserved */
     void (*reserved1) (void);
     void (*reserved2) (void);
     void (*reserved3) (void);
     void (*reserved4) (void);
-    void (*reserved5) (void);
-    void (*reserved6) (void);
 } LightDMGreeterClass;
 
 GType lightdm_greeter_get_type (void);
 
 LightDMGreeter *lightdm_greeter_new (void);
+
+void lightdm_greeter_set_resettable (LightDMGreeter *greeter, gboolean resettable);
+
+void lightdm_greeter_connect_to_daemon (LightDMGreeter *greeter, GCancellable *cancellable, GAsyncReadyCallback callback, gpointer user_data);
+
+gboolean lightdm_greeter_connect_to_daemon_finish (LightDMGreeter *greeter, GAsyncResult *result, GError **error);
+
+gboolean lightdm_greeter_connect_to_daemon_sync (LightDMGreeter *greeter, GError **error);
 
 gboolean lightdm_greeter_connect_sync (LightDMGreeter *greeter, GError **error);
 
@@ -119,7 +128,15 @@ const gchar *lightdm_greeter_get_authentication_user (LightDMGreeter *greeter);
 
 void lightdm_greeter_set_language (LightDMGreeter *greeter, const gchar *language);
 
+void lightdm_greeter_start_session (LightDMGreeter *greeter, const gchar *session, GCancellable *cancellable, GAsyncReadyCallback callback, gpointer user_data);
+
+gboolean lightdm_greeter_start_session_finish (LightDMGreeter *greeter, GAsyncResult *result, GError **error);
+
 gboolean lightdm_greeter_start_session_sync (LightDMGreeter *greeter, const gchar *session, GError **error);
+
+void lightdm_greeter_ensure_shared_data_dir (LightDMGreeter *greeter, const gchar *username, GCancellable *cancellable, GAsyncReadyCallback callback, gpointer user_data);
+
+gchar *lightdm_greeter_ensure_shared_data_dir_finish (LightDMGreeter *greeter, GAsyncResult *result);
 
 gchar *lightdm_greeter_ensure_shared_data_dir_sync (LightDMGreeter *greeter, const gchar *username);
 

@@ -24,7 +24,8 @@ namespace LightDM {
         public signal void authentication_complete ();
         public signal void autologin_timer_expired ();
 
-        public bool connect_sync () throws GLib.Error;
+        public async bool connect_to_daemon () throws GLib.Error;
+        public bool connect_to_daemon_sync () throws GLib.Error;
         public unowned string get_hint (string name);
         public unowned string default_session_hint { get; }
         public bool hide_users_hint { get; }
@@ -47,7 +48,10 @@ namespace LightDM {
         public bool in_authentication { get; }
         public bool is_authenticated { get; }
         public unowned string? authentication_user { get; }
-        public void start_session_sync (string? session = null) throws GLib.Error;
+        public async void start_session (string? session = null) throws GLib.Error;
+        public bool start_session_sync (string? session = null) throws GLib.Error;
+        public async string ensure_shared_data_dir (string username);
+        public string ensure_shared_data_dir_sync (string username);
     }
     [CCode (has_type_id = false)]
     public enum MessageType {

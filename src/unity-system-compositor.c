@@ -39,6 +39,9 @@ struct UnitySystemCompositorPrivate
     gint vt;
     gboolean have_vt_ref;
 
+    /* TRUE if should show hardware cursor */
+    gboolean enable_hardware_cursor;
+
     /* Pipes to communicate with compositor */
     int to_compositor_pipe[2];
     int from_compositor_pipe[2];
@@ -118,6 +121,13 @@ unity_system_compositor_set_vt (UnitySystemCompositor *compositor, gint vt)
 }
 
 void
+unity_system_compositor_set_enable_hardware_cursor (UnitySystemCompositor *compositor, gboolean enable_cursor)
+{
+    g_return_if_fail (compositor != NULL);
+    compositor->priv->enable_hardware_cursor = enable_cursor;
+}
+
+void
 unity_system_compositor_set_timeout (UnitySystemCompositor *compositor, gint timeout)
 {
     g_return_if_fail (compositor != NULL);
@@ -169,6 +179,8 @@ unity_system_compositor_connect_session (DisplayServer *display_server, Session 
     UnitySystemCompositor *compositor = UNITY_SYSTEM_COMPOSITOR (display_server);
     const gchar *name;
 
+    session_set_env (session, "XDG_SESSION_TYPE", "mir");
+
     if (compositor->priv->socket)
         session_set_env (session, "MIR_SOCKET", compositor->priv->socket);
     if (IS_GREETER (session))
@@ -188,6 +200,7 @@ unity_system_compositor_connect_session (DisplayServer *display_server, Session 
 static void
 unity_system_compositor_disconnect_session (DisplayServer *display_server, Session *session)
 {
+    session_unset_env (session, "XDG_SESSION_TYPE");
     session_unset_env (session, "MIR_SOCKET");
     session_unset_env (session, "MIR_SERVER_NAME");
     session_unset_env (session, "XDG_VTNR");
@@ -357,7 +370,8 @@ unity_system_compositor_start (DisplayServer *server)
 {
     UnitySystemCompositor *compositor = UNITY_SYSTEM_COMPOSITOR (server);
     gboolean result;
-    gchar *dir, *log_file, *command, *absolute_command, *value;
+    GString *command;
+    gchar *dir, *log_file, *absolute_command, *value;
 
     g_return_val_if_fail (compositor->priv->process == NULL, FALSE);
 
@@ -410,10 +424,16 @@ unity_system_compositor_start (DisplayServer *server)
         l_debug (compositor, "Can't launch compositor %s, not found in path", compositor->priv->command);
         return FALSE;
     }
-    command = g_strdup_printf ("%s --file '%s' --from-dm-fd %d --to-dm-fd %d --vt %d", absolute_command, compositor->priv->socket, compositor->priv->to_compositor_pipe[0], compositor->priv->from_compositor_pipe[1], compositor->priv->vt);
-    process_set_command (compositor->priv->process, command);
-    g_free (command);
+    command = g_string_new (absolute_command);
     g_free (absolute_command);
+    g_string_append_printf (command, " --file '%s'", compositor->priv->socket);
+    g_string_append_printf (command, " --from-dm-fd %d --to-dm-fd %d", compositor->priv->to_compositor_pipe[0], compositor->priv->from_compositor_pipe[1]);
+    if (compositor->priv->vt > 0)
+        g_string_append_printf (command, " --vt %d", compositor->priv->vt);
+    if (compositor->priv->enable_hardware_cursor)
+        g_string_append (command, " --enable-hardware-cursor=true");
+    process_set_command (compositor->priv->process, command->str);
+    g_string_free (command, TRUE);
 
     /* Start the compositor */
     g_signal_connect (compositor->priv->process, "stopped", G_CALLBACK (stopped_cb), compositor);

@@ -24,7 +24,7 @@ int main ()
     g_object_connect (greeter, "authentication-complete", G_CALLBACK (authentication_complete_cb), NULL);
 
     // Connect to LightDM daemon
-    if (!lightdm_greeter_connect_sync (greeter, NULL))
+    if (!lightdm_greeter_connect_to_daemon_sync (greeter, NULL))
         return EXIT_FAILURE;
 
     // Start authentication
@@ -105,6 +105,22 @@ static void authentication_complete_cb (LightDMGreeter *greeter)
 @greeter: 
 
 
+<!-- ##### USER_FUNCTION idle ##### -->
+<para>
+
+</para>
+
+@greeter: 
+
+
+<!-- ##### USER_FUNCTION reset ##### -->
+<para>
+
+</para>
+
+@greeter: 
+
+
 <!-- ##### ENUM LightDMMessageType ##### -->
 <para>
 
@@ -130,13 +146,66 @@ static void authentication_complete_cb (LightDMGreeter *greeter)
 @Returns: 
 
 
-<!-- ##### FUNCTION lightdm_greeter_connect_sync ##### -->
+<!-- ##### FUNCTION lightdm_greeter_set_resettable ##### -->
+<para>
+
+</para>
+
+@greeter: 
+@resettable: 
+
+
+<!-- ##### FUNCTION lightdm_greeter_connect_to_daemon ##### -->
+<para>
+
+</para>
+
+@greeter: 
+@cancellable: 
+@callback: 
+@user_data: 
+
+
+<!-- ##### FUNCTION lightdm_greeter_connect_to_daemon_finish ##### -->
+<para>
+
+</para>
+
+@greeter: 
+@result: 
+@error: 
+@Returns: 
+
+
+<!-- ##### FUNCTION lightdm_greeter_connect_to_daemon_sync ##### -->
 <para>
 
 </para>
 
 @greeter: 
 @error: 
+@Returns: 
+
+
+<!-- ##### FUNCTION lightdm_greeter_ensure_shared_data_dir ##### -->
+<para>
+
+</para>
+
+@greeter: 
+@username: 
+@cancellable: 
+@callback: 
+@user_data: 
+
+
+<!-- ##### FUNCTION lightdm_greeter_ensure_shared_data_dir_finish ##### -->
+<para>
+
+</para>
+
+@greeter: 
+@result: 
 @Returns: 
 
 
@@ -352,6 +421,29 @@ static void authentication_complete_cb (LightDMGreeter *greeter)
 </para>
 
 @greeter: 
+@Returns: 
+
+
+<!-- ##### FUNCTION lightdm_greeter_start_session ##### -->
+<para>
+
+</para>
+
+@greeter: 
+@session: 
+@cancellable: 
+@callback: 
+@user_data: 
+
+
+<!-- ##### FUNCTION lightdm_greeter_start_session_finish ##### -->
+<para>
+
+</para>
+
+@greeter: 
+@result: 
+@error: 
 @Returns: 
 
 
