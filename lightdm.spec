@@ -5,7 +5,7 @@
 %def_enable qt
 
 Name: lightdm
-Version: 1.11.1
+Version: 1.11.4
 Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
@@ -21,6 +21,7 @@ Source4: %name.wms
 Source6: %name-tmpfiles.conf
 Source7: %name-greeter.pam
 Source8: %name.rules
+Source9: %name.service
 
 Patch1: %name-%version-%release.patch
 
@@ -145,6 +146,11 @@ This package provides a Qt-based LightDM greeter engine.
 %install
 %makeinstall_std
 
+# We don't ship AppAmor
+rm -rf %buildroot%_sysconfdir/apparmor.d/
+# omit upstart support
+rm -rf %buildroot%_sysconfdir/init
+
 mkdir -p %buildroot%_sysconfdir/%name/lightdm.conf.d
 mkdir -p %buildroot%_datadir/%name/lightdm.conf.d
 mkdir -p %buildroot%_datadir/%name/remote-sessions
@@ -167,8 +173,9 @@ install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 # install script to launch dbus
 ##install -m755 %%SOURCE5 %buildroot%_libexecdir/%name/%name-greeter-session
 
-install -Dpm 644 %SOURCE6 %buildroot/lib/tmpfiles.d/lightdm.conf
-install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/lightdm.rules
+install -Dpm 644 %SOURCE6 %buildroot/lib/tmpfiles.d/%name.conf
+install -m644 -p -D %SOURCE8 %buildroot%_datadir/polkit-1/rules.d/%name.rules
+install -m644 -p -D %SOURCE9 %buildroot%_unitdir/%name.service
 echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_environment
 
 %find_lang --with-gnome %name
@@ -177,15 +184,33 @@ echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_envi
 %_sbindir/groupadd -r -f _ldm >/dev/null 2>&1 || :
 %_sbindir/useradd -M -r -d %_localstatedir/lib/ldm -s /bin/false -c "LightDM daemon" -g _ldm _ldm >/dev/null 2>&1 || :
 
+
+%post
+if [ $1 -eq 1 ] ; then
+        SYSTEMCTL=/sbin/systemctl
+        # Initial installation
+        $SYSTEMCTL preset %name.service > /dev/null 2>&1 ||:
+fi
+
+%preun
+if [ $1 -eq 0 ] ; then
+        SYSTEMCTL=/sbin/systemctl
+        # Package removal, not upgrade
+        $SYSTEMCTL --no-reload disable %name.service > /dev/null 2>&1 ||:
+        $SYSTEMCTL stop %name.service > /dev/null 2>&1 ||:
+fi
+
+
 %files -f %name.lang
 %doc NEWS
 %config %_sysconfdir/dbus-1/system.d/org.freedesktop.DisplayManager.conf
 %dir %_sysconfdir/%name
 %dir %_sysconfdir/%name/sessions
-%_sysconfdir/X11/wms-methods.d/lightdm
+%_sysconfdir/X11/wms-methods.d/%name
 %config(noreplace) %_sysconfdir/%name/*.conf
 %config(noreplace) %_sysconfdir/pam.d/%{name}*
 %_sbindir/%name
+%_unitdir/%name.service
 %_man1dir/*
 %_bindir/dm-tool
 %_libexecdir/*
@@ -195,8 +220,8 @@ echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_envi
 %attr(640,_ldm,_ldm) %_localstatedir/lib/ldm/.pam_environment
 %attr(750,_ldm,_ldm) %dir %_localstatedir/lib/lightdm-data
 %attr(775,_ldm,_ldm) %dir %_localstatedir/run/%name
-/lib/tmpfiles.d/lightdm.conf
-%_datadir/polkit-1/rules.d/lightdm.rules
+/lib/tmpfiles.d/%name.conf
+%_datadir/polkit-1/rules.d/%name.rules
 
 %if_enabled gobject
 %files -n liblightdm-gobject
@@ -226,6 +251,10 @@ echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_envi
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Tue Jul 01 2014 Alexey Shabalin <shaba@altlinux.ru> 1.11.4-alt1
+- 1.11.4
+- add systemd unit
+
 * Tue May 06 2014 Alexey Shabalin <shaba@altlinux.ru> 1.11.1-alt1
 - 1.11.1
 
