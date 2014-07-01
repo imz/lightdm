@@ -24,6 +24,8 @@ namespace LightDM {
         public signal void authentication_complete ();
         public signal void autologin_timer_expired ();
 
+        [Deprecated (replacement = "LightDM.Greeter.connect_to_daemon_sync")]
+        public bool connect_sync () throws GLib.Error;
         public async bool connect_to_daemon () throws GLib.Error;
         public bool connect_to_daemon_sync () throws GLib.Error;
         public unowned string get_hint (string name);
@@ -104,6 +106,7 @@ namespace LightDM {
         public bool logged_in { get; }
         public unowned string name { get; }
         public unowned string real_name { get; }
+        public unowned Posix.uid_t uid { get; }
         public unowned string home_directory { get; }
         public unowned string session { get; }
         public unowned string background { get; }

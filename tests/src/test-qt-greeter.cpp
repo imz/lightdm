@@ -51,7 +51,6 @@ void TestGreeter::authenticationComplete ()
 
 void TestGreeter::autologinTimerExpired ()
 {
-    status_notify ("%s AUTOLOGIN-TIMER-EXPIRED", greeter_id);
 }
 
 void TestGreeter::printHints ()
@@ -70,7 +69,21 @@ void TestGreeter::printHints ()
         status_notify ("%s SHOW-MANUAL-LOGIN-HINT", greeter_id);
     if (!showRemoteLoginHint ())
         status_notify ("%s SHOW-REMOTE-LOGIN-HINT=FALSE", greeter_id);
-
+    int timeout = autologinTimeoutHint ();
+    if (autologinUserHint () != "")
+    {
+        if (timeout != 0)
+            status_notify ("%s AUTOLOGIN-USER USERNAME=%s TIMEOUT=%d", greeter_id, greeter->autologinUserHint ().toAscii ().constData (), timeout);
+        else
+            status_notify ("%s AUTOLOGIN-USER USERNAME=%s", greeter_id, greeter->autologinUserHint ().toAscii ().constData ());
+    }
+    else if (autologinGuestHint ())
+    {
+        if (timeout != 0)
+            status_notify ("%s AUTOLOGIN-GUEST TIMEOUT=%d", greeter_id, timeout);
+        else
+            status_notify ("%s AUTOLOGIN-GUEST", greeter_id);
+    }
 }
 
 void TestGreeter::idle ()
@@ -256,6 +269,11 @@ main(int argc, char *argv[])
 
     status_connect (request_cb, greeter_id);
 
+    /* Workaround for Qt being confused by libsystem */
+#if QT_VERSION >= QT_VERSION_CHECK (5, 3, 0)
+    QCoreApplication::setSetuidAllowed (true);
+#endif  
+
     app = new QCoreApplication (argc, argv);
 
     signal (SIGINT, signal_cb);
@@ -271,7 +289,7 @@ main(int argc, char *argv[])
         g_string_append_printf (status_text, " XDG_SESSION_COOKIE=%s", xdg_session_cookie);
     if (xdg_session_class)
         g_string_append_printf (status_text, " XDG_SESSION_CLASS=%s", xdg_session_class);
-    status_notify (status_text->str);
+    status_notify ("%s", status_text->str);
     g_string_free (status_text, TRUE);
 
     config = new QSettings (g_build_filename (getenv ("LIGHTDM_TEST_ROOT"), "script", NULL), QSettings::IniFormat);

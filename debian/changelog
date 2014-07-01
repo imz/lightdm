@@ -1,3 +1,49 @@
+lightdm (1.11.4-0ubuntu1) utopic; urgency=medium
+
+  * New upstream release:
+    - Do timed autologin each time you are returned to the greeter
+    - Fix tests failing with Qt 5.3 due to it checking getuid/geteuid which we are faking
+    - dm-tool: Warn if trying to switch to user without username
+  * debian/lightdm.service:
+    - Don't test for specific installation path
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Tue, 01 Jul 2014 15:50:16 +1200
+
+lightdm (1.11.3-0ubuntu1) utopic; urgency=medium
+
+  * New upstream release:
+    - Fix Mir sessions broken with unity-system-compositor 0.3.
+    - Add back Vala bindings for LightDM.Greeter.connect_sync - just mark as
+      deprecated.
+    - Put unity-system-compositor's mir_socket under /run rather than /tmp.
+      (LP: #1325995)
+    - Fix building with clang (3.5) and -Werror.
+    - Correct section name in default users.conf file.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Thu, 05 Jun 2014 16:07:14 +1200
+
+lightdm (1.11.2-0ubuntu3) utopic; urgency=high
+
+  * No change rebuild against new dh_installinit, to call update-rc.d at
+    postinst.
+
+ -- Dimitri John Ledkov <xnox@ubuntu.com>  Wed, 28 May 2014 11:09:29 +0100
+
+lightdm (1.11.2-0ubuntu2) utopic; urgency=medium
+
+  * Integration plymouth systemd system job with plymouth services.
+
+ -- Dimitri John Ledkov <xnox@ubuntu.com>  Sat, 17 May 2014 19:18:41 +0100
+
+lightdm (1.11.2-0ubuntu1) utopic; urgency=medium
+
+  * New upstream release:
+    - Add liblightdm method to get user UID
+    - DBus-activate logind
+    - Check for libgcrypt at configure time
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Fri, 16 May 2014 10:55:37 +1200
+
 lightdm (1.11.1-0ubuntu1) utopic; urgency=medium
 
   * New upstream release:
