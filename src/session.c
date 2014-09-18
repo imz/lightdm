@@ -38,8 +38,8 @@ static guint signals[LAST_SIGNAL] = { 0 };
 
 struct SessionPrivate
 {
-    /* Session type */
-    gchar *session_type;
+    /* Configuration for this session */
+    SessionConfig *config;
 
     /* Display server running on */
     DisplayServer *display_server;
@@ -131,18 +131,27 @@ session_new (void)
 }
 
 void
-session_set_session_type (Session *session, const gchar *session_type)
+session_set_config (Session *session, SessionConfig *config)
 {
     g_return_if_fail (session != NULL);
-    g_free (session->priv->session_type);
-    session->priv->session_type = g_strdup (session_type);
+
+    if (session->priv->config)
+        g_object_unref (session->priv->config);
+    session->priv->config = g_object_ref (config);
+}
+
+SessionConfig *
+session_get_config (Session *session)
+{
+    g_return_val_if_fail (session != NULL, NULL);
+    return session->priv->config;
 }
 
 const gchar *
 session_get_session_type (Session *session)
 {
     g_return_val_if_fail (session != NULL, NULL);
-    return session->priv->session_type;
+    return session_config_get_session_type (session_get_config (session));
 }
 
 void
@@ -617,7 +626,7 @@ session_real_start (Session *session)
     close (from_child_input);
 
     /* Indicate what version of the protocol we are using */
-    version = 1;
+    version = 2;
     write_data (session, &version, sizeof (version));
 
     /* Send configuration */
@@ -796,10 +805,8 @@ session_real_run (Session *session)
     for (i = 0; i < argc; i++)
         write_string (session, session->priv->argv[i]);
 
-    if (login1_is_running ())
-        session->priv->login1_session = read_string_from_child (session);
-    if (!session->priv->login1_session)
-        session->priv->console_kit_cookie = read_string_from_child (session);
+    session->priv->login1_session = read_string_from_child (session);
+    session->priv->console_kit_cookie = read_string_from_child (session);
 }
 
 void
@@ -809,7 +816,7 @@ session_lock (Session *session)
     if (getuid () == 0)
     {
         if (session->priv->login1_session)
-            login1_lock_session (session->priv->login1_session);
+            login1_service_lock_session (login1_service_get_instance (), session->priv->login1_session);
         else if (session->priv->console_kit_cookie)
             ck_lock_session (session->priv->console_kit_cookie);
     }
@@ -822,7 +829,7 @@ session_unlock (Session *session)
     if (getuid () == 0)
     {
         if (session->priv->login1_session)
-            login1_unlock_session (session->priv->login1_session);
+            login1_service_unlock_session (login1_service_get_instance (), session->priv->login1_session);
         else if (session->priv->console_kit_cookie)
             ck_unlock_session (session->priv->console_kit_cookie);
     }
@@ -835,7 +842,7 @@ session_activate (Session *session)
     if (getuid () == 0)
     {
         if (session->priv->login1_session)
-            login1_activate_session (session->priv->login1_session);
+            login1_service_activate_session (login1_service_get_instance (), session->priv->login1_session);
         else if (session->priv->console_kit_cookie)
             ck_activate_session (session->priv->console_kit_cookie);
     }
@@ -904,7 +911,8 @@ session_finalize (GObject *object)
     Session *self = SESSION (object);
     int i;
 
-    g_free (self->priv->session_type);
+    if (self->priv->config)
+        g_object_unref (self->priv->config);
     if (self->priv->display_server)
         g_object_unref (self->priv->display_server);
     if (self->priv->pid)

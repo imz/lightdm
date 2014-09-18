@@ -81,7 +81,6 @@ static const GDBusInterfaceVTable user_vtable =
     handle_user_call,
     handle_user_get_property,
 };
-static GDBusConnection *ck_connection = NULL;
 static GDBusNodeInfo *ck_session_info;
 typedef struct
 {
@@ -107,6 +106,21 @@ static const GDBusInterfaceVTable ck_session_vtable =
 
 typedef struct
 {
+    gchar *id;
+    gchar *path;
+    gboolean can_graphical;
+    gboolean can_multi_session;
+} Login1Seat;
+
+static GList *login1_seats = NULL;
+
+static Login1Seat *add_login1_seat (GDBusConnection *connection, const gchar *id, gboolean emit_signal);
+static Login1Seat *find_login1_seat (const gchar *id);
+static void remove_login1_seat (GDBusConnection *connection, const gchar *id);
+
+typedef struct
+{
+    gchar *id;
     gchar *path;
     guint pid;
     gboolean locked;
@@ -330,6 +344,71 @@ stop_loop (gpointer user_data)
 }
 
 static void
+switch_to_greeter_done_cb (GObject *bus, GAsyncResult *result, gpointer data)
+{
+    GVariant *r;
+    GError *error = NULL;
+
+    r = g_dbus_connection_call_finish (G_DBUS_CONNECTION (bus), result, &error);
+    if (error)
+        g_warning ("Failed to switch to greeter: %s\n", error->message);
+    g_clear_error (&error);
+
+    if (r)
+    {
+        check_status ("RUNNER SWITCH-TO-GREETER");
+        g_variant_unref (r);
+    }
+    else
+        check_status ("RUNNER SWITCH-TO-GREETER FAILED");
+}
+
+static void
+switch_to_user_done_cb (GObject *bus, GAsyncResult *result, gpointer data)
+{
+    GVariant *r;
+    GError *error = NULL;
+    gchar *username = data, *status_text;
+
+    r = g_dbus_connection_call_finish (G_DBUS_CONNECTION (bus), result, &error);
+    if (error)
+        g_warning ("Failed to switch to user: %s\n", error->message);
+    g_clear_error (&error);
+
+    if (r)
+    {
+        status_text = g_strdup_printf ("RUNNER SWITCH-TO-USER USERNAME=%s", username);
+        g_variant_unref (r);
+    }
+    else
+        status_text = g_strdup_printf ("RUNNER SWITCH-TO-USER USERNAME=%s FAILED", username);
+    check_status (status_text);
+
+    g_free (status_text);
+    g_free (username);
+}
+
+static void
+switch_to_guest_done_cb (GObject *bus, GAsyncResult *result, gpointer data)
+{
+    GVariant *r;
+    GError *error = NULL;
+
+    r = g_dbus_connection_call_finish (G_DBUS_CONNECTION (bus), result, &error);
+    if (error)
+        g_warning ("Failed to switch to guest: %s\n", error->message);
+    g_clear_error (&error);
+
+    if (r)
+    {
+        check_status ("RUNNER SWITCH-TO-GUEST");
+        g_variant_unref (r);
+    }
+    else
+        check_status ("RUNNER SWITCH-TO-GUEST FAILED");
+}
+
+static void
 handle_command (const gchar *command)
 {
     const gchar *c;
@@ -447,6 +526,66 @@ handle_command (const gchar *command)
         g_main_loop_run (loop);
         g_main_loop_unref (loop);
     }
+    else if (strcmp (name, "ADD-SEAT") == 0)
+    {
+        const gchar *id, *v;
+        Login1Seat *seat;
+
+        id = g_hash_table_lookup (params, "ID");      
+        seat = add_login1_seat (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL), id, TRUE);
+        v = g_hash_table_lookup (params, "CAN-GRAPHICAL");
+        if (v)
+            seat->can_graphical = strcmp (v, "TRUE") == 0;
+        v = g_hash_table_lookup (params, "CAN-MULTI-SESSION");
+        if (v)
+            seat->can_multi_session = strcmp (v, "TRUE") == 0;
+    }
+    else if (strcmp (name, "UPDATE-SEAT") == 0)
+    {
+        Login1Seat *seat;
+        const gchar *id;
+      
+        id = g_hash_table_lookup (params, "ID");
+        seat = find_login1_seat (id);
+        if (seat)
+        {
+            const gchar *v;
+            GVariantBuilder invalidated_properties;
+            GError *error = NULL;
+
+            g_variant_builder_init (&invalidated_properties, G_VARIANT_TYPE_ARRAY);
+
+            v = g_hash_table_lookup (params, "CAN-GRAPHICAL");
+            if (v)
+            {
+                seat->can_graphical = strcmp (v, "TRUE") == 0;
+                g_variant_builder_add (&invalidated_properties, "s", "CanGraphical");
+            }
+            v = g_hash_table_lookup (params, "CAN-MULTI-SESSION");
+            if (v)
+            {
+                seat->can_multi_session = strcmp (v, "TRUE") == 0;
+                g_variant_builder_add (&invalidated_properties, "s", "CanMultiSession");
+            }
+
+            g_dbus_connection_emit_signal (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                           NULL,
+                                           seat->path,
+                                           "org.freedesktop.DBus.Properties",
+                                           "PropertiesChanged",
+                                           g_variant_new ("(sa{sv}as)", "org.freedesktop.login1.Seat", NULL, &invalidated_properties),
+                                           &error);
+            if (error)
+                g_warning ("Failed to emit PropertiesChanged: %s", error->message);
+            g_clear_error (&error);
+        }
+    }
+    else if (strcmp (name, "REMOVE-SEAT") == 0)
+    {
+        const gchar *id;
+        id = g_hash_table_lookup (params, "ID");
+        remove_login1_seat (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL), id);
+    }
     else if (strcmp (name, "LIST-SEATS") == 0)
     {
         GVariant *result, *value;
@@ -463,7 +602,7 @@ handle_command (const gchar *command)
                                               g_variant_new ("(ss)", "org.freedesktop.DisplayManager", "Seats"),
                                               G_VARIANT_TYPE ("(v)"),
                                               G_DBUS_CALL_FLAGS_NONE,
-                                              1000,
+                                              G_MAXINT,
                                               NULL,
                                               NULL);
 
@@ -499,7 +638,7 @@ handle_command (const gchar *command)
                                               g_variant_new ("(ss)", "org.freedesktop.DisplayManager", "Sessions"),
                                               G_VARIANT_TYPE ("(v)"),
                                               G_DBUS_CALL_FLAGS_NONE,
-                                              1000,
+                                              G_MAXINT,
                                               NULL,
                                               NULL);
 
@@ -519,55 +658,101 @@ handle_command (const gchar *command)
         check_status (status->str);
         g_string_free (status, TRUE);
     }
+    else if (strcmp (name, "SEAT-CAN-SWITCH") == 0)
+    {
+        GVariant *result, *value;
+        gchar *status;
+
+        result = g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                              "org.freedesktop.DisplayManager",
+                                              "/org/freedesktop/DisplayManager/Seat0",
+                                              "org.freedesktop.DBus.Properties",
+                                              "Get",
+                                              g_variant_new ("(ss)", "org.freedesktop.DisplayManager.Seat", "CanSwitch"),
+                                              G_VARIANT_TYPE ("(v)"),
+                                              G_DBUS_CALL_FLAGS_NONE,
+                                              G_MAXINT,
+                                              NULL,
+                                              NULL);
+
+        g_variant_get (result, "(v)", &value);
+        status = g_strdup_printf ("RUNNER SEAT-CAN-SWITCH CAN-SWITCH=%s", g_variant_get_boolean (value) ? "TRUE" : "FALSE");
+        g_variant_unref (value);
+        g_variant_unref (result);
+        check_status (status);
+        g_free (status);
+    }
+    else if (strcmp (name, "SEAT-HAS-GUEST-ACCOUNT") == 0)
+    {
+        GVariant *result, *value;
+        gchar *status;
+
+        result = g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                              "org.freedesktop.DisplayManager",
+                                              "/org/freedesktop/DisplayManager/Seat0",
+                                              "org.freedesktop.DBus.Properties",
+                                              "Get",
+                                              g_variant_new ("(ss)", "org.freedesktop.DisplayManager.Seat", "HasGuestAccount"),
+                                              G_VARIANT_TYPE ("(v)"),
+                                              G_DBUS_CALL_FLAGS_NONE,
+                                              G_MAXINT,
+                                              NULL,
+                                              NULL);
+
+        g_variant_get (result, "(v)", &value);
+        status = g_strdup_printf ("RUNNER SEAT-HAS-GUEST-ACCOUNT HAS-GUEST-ACCOUNT=%s", g_variant_get_boolean (value) ? "TRUE" : "FALSE");
+        g_variant_unref (value);
+        g_variant_unref (result);
+        check_status (status);
+        g_free (status);
+    }
     else if (strcmp (name, "SWITCH-TO-GREETER") == 0)
     {
-        g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
-                                     "org.freedesktop.DisplayManager",
-                                     "/org/freedesktop/DisplayManager/Seat0",
-                                     "org.freedesktop.DisplayManager.Seat",
-                                     "SwitchToGreeter",
-                                     g_variant_new ("()"),
-                                     G_VARIANT_TYPE ("()"),
-                                     G_DBUS_CALL_FLAGS_NONE,
-                                     1000,
-                                     NULL,
-                                     NULL);
-        check_status ("RUNNER SWITCH-TO-GREETER");
+        g_dbus_connection_call (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                "org.freedesktop.DisplayManager",
+                                "/org/freedesktop/DisplayManager/Seat0",
+                                "org.freedesktop.DisplayManager.Seat",
+                                "SwitchToGreeter",
+                                g_variant_new ("()"),
+                                G_VARIANT_TYPE ("()"),
+                                G_DBUS_CALL_FLAGS_NONE,
+                                G_MAXINT,
+                                NULL,
+                                switch_to_greeter_done_cb,
+                                NULL);
     }
     else if (strcmp (name, "SWITCH-TO-USER") == 0)
     {
-        gchar *status_text, *username;
+        const gchar *username;
 
         username = g_hash_table_lookup (params, "USERNAME");
-        g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
-                                     "org.freedesktop.DisplayManager",
-                                     "/org/freedesktop/DisplayManager/Seat0",
-                                     "org.freedesktop.DisplayManager.Seat",
-                                     "SwitchToUser",
-                                     g_variant_new ("(ss)", username, ""),
-                                     G_VARIANT_TYPE ("()"),
-                                     G_DBUS_CALL_FLAGS_NONE,
-                                     1000,
-                                     NULL,
-                                     NULL);
-        status_text = g_strdup_printf ("RUNNER SWITCH-TO-USER USERNAME=%s", username);
-        check_status (status_text);
-        g_free (status_text);
+        g_dbus_connection_call (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                "org.freedesktop.DisplayManager",
+                                "/org/freedesktop/DisplayManager/Seat0",
+                                "org.freedesktop.DisplayManager.Seat",
+                                "SwitchToUser",
+                                g_variant_new ("(ss)", username, ""),
+                                G_VARIANT_TYPE ("()"),
+                                G_DBUS_CALL_FLAGS_NONE,
+                                G_MAXINT,
+                                NULL,
+                                switch_to_user_done_cb,
+                                g_strdup (username));
     }
     else if (strcmp (name, "SWITCH-TO-GUEST") == 0)
     {
-        g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
-                                     "org.freedesktop.DisplayManager",
-                                     "/org/freedesktop/DisplayManager/Seat0",
-                                     "org.freedesktop.DisplayManager.Seat",
-                                     "SwitchToGuest",
-                                     g_variant_new ("(s)", ""),
-                                     G_VARIANT_TYPE ("()"),
-                                     G_DBUS_CALL_FLAGS_NONE,
-                                     1000,
-                                     NULL,
-                                     NULL);
-        check_status ("RUNNER SWITCH-TO-GUEST");
+        g_dbus_connection_call (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                "org.freedesktop.DisplayManager",
+                                "/org/freedesktop/DisplayManager/Seat0",
+                                "org.freedesktop.DisplayManager.Seat",
+                                "SwitchToGuest",
+                                g_variant_new ("(s)", ""),
+                                G_VARIANT_TYPE ("()"),
+                                G_DBUS_CALL_FLAGS_NONE,
+                                G_MAXINT,
+                                NULL,
+                                switch_to_guest_done_cb,
+                                NULL);
     }
     else if (strcmp (name, "STOP-DAEMON") == 0)
         stop_process (lightdm_process);
@@ -1024,7 +1209,7 @@ start_upower_daemon (void)
 }
 
 static CKSession *
-open_ck_session (GVariant *params)
+open_ck_session (GDBusConnection *connection, GVariant *params)
 {
     CKSession *session;
     GString *cookie;
@@ -1051,7 +1236,7 @@ open_ck_session (GVariant *params)
     session->cookie = cookie->str;
     g_string_free (cookie, FALSE);
     session->path = g_strdup_printf ("/org/freedesktop/ConsoleKit/Session%d", ck_session_index++);
-    session->id = g_dbus_connection_register_object (ck_connection,
+    session->id = g_dbus_connection_register_object (connection,
                                                      session->path,
                                                      ck_session_info->interfaces[0],
                                                      &ck_session_vtable,
@@ -1091,12 +1276,12 @@ handle_ck_call (GDBusConnection       *connection,
     {
         GVariantBuilder params;
         g_variant_builder_init (&params, G_VARIANT_TYPE ("a(sv)"));
-        CKSession *session = open_ck_session (g_variant_builder_end (&params));
+        CKSession *session = open_ck_session (connection, g_variant_builder_end (&params));
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", session->cookie));
     }
     else if (strcmp (method_name, "OpenSessionWithParameters") == 0)
     {
-        CKSession *session = open_ck_session (g_variant_get_child_value (parameters, 0));
+        CKSession *session = open_ck_session (connection, g_variant_get_child_value (parameters, 0));
         g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", session->cookie));
     }
     else if (strcmp (method_name, "GetSessionForCookie") == 0)
@@ -1224,8 +1409,6 @@ ck_name_acquired_cb (GDBusConnection *connection,
     GDBusNodeInfo *ck_info;
     GError *error = NULL;
 
-    ck_connection = connection;
-
     ck_info = g_dbus_node_info_new_for_xml (ck_interface, &error);
     if (error)
         g_warning ("Failed to parse D-Bus interface: %s", error->message);
@@ -1269,6 +1452,147 @@ start_console_kit_daemon (void)
 }
 
 static void
+handle_login1_seat_call (GDBusConnection       *connection,
+                         const gchar           *sender,
+                         const gchar           *object_path,
+                         const gchar           *interface_name,
+                         const gchar           *method_name,
+                         GVariant              *parameters,
+                         GDBusMethodInvocation *invocation,
+                         gpointer               user_data)
+{
+    g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
+}
+
+static GVariant *
+handle_login1_seat_get_property (GDBusConnection       *connection,
+                                 const gchar           *sender,
+                                 const gchar           *object_path,
+                                 const gchar           *interface_name,
+                                 const gchar           *property_name,
+                                 GError               **error,
+                                 gpointer               user_data)
+{
+    Login1Seat *seat = user_data;
+
+    if (strcmp (property_name, "CanGraphical") == 0)
+        return g_variant_new_boolean (seat->can_graphical);
+    else if (strcmp (property_name, "CanMultiSession") == 0)
+        return g_variant_new_boolean (seat->can_multi_session);
+    else if (strcmp (property_name, "Id") == 0)
+        return g_variant_new_string (seat->id);
+    else
+        return NULL;
+}
+
+static Login1Seat *
+add_login1_seat (GDBusConnection *connection, const gchar *id, gboolean emit_signal)
+{
+    Login1Seat *seat;
+    GError *error = NULL;
+    GDBusNodeInfo *login1_seat_info;
+
+    const gchar *login1_seat_interface =
+        "<node>"
+        "  <interface name='org.freedesktop.login1.Seat'>"
+        "    <property name='CanGraphical' type='b' access='read'/>"
+        "    <property name='CanMultiSession' type='b' access='read'/>"
+        "    <property name='Id' type='s' access='read'/>"
+        "  </interface>"
+        "</node>";
+    static const GDBusInterfaceVTable login1_seat_vtable =
+    {
+        handle_login1_seat_call,
+        handle_login1_seat_get_property,
+    };
+
+    seat = g_malloc0 (sizeof (Login1Seat));
+    login1_seats = g_list_append (login1_seats, seat);
+    seat->id = g_strdup (id);
+    seat->path = g_strdup_printf ("/org/freedesktop/login1/seat/%s", seat->id);
+    seat->can_graphical = TRUE;
+    seat->can_multi_session = TRUE;
+
+    login1_seat_info = g_dbus_node_info_new_for_xml (login1_seat_interface, &error);
+    if (error)
+        g_warning ("Failed to parse login1 seat D-Bus interface: %s", error->message);
+    g_clear_error (&error);
+    if (!login1_seat_info)
+        return NULL;
+
+    g_dbus_connection_register_object (connection,
+                                       seat->path,
+                                       login1_seat_info->interfaces[0],
+                                       &login1_seat_vtable,
+                                       seat,
+                                       NULL,
+                                       &error);
+    if (error)
+        g_warning ("Failed to register login1 seat: %s", error->message);
+    g_clear_error (&error);
+    g_dbus_node_info_unref (login1_seat_info);
+
+    if (emit_signal)
+    {
+        g_dbus_connection_emit_signal (connection,
+                                       NULL,
+                                       "/org/freedesktop/login1",
+                                       "org.freedesktop.login1.Manager",
+                                       "SeatNew",
+                                       g_variant_new ("(so)", seat->id, seat->path),
+                                       &error);
+        if (error)
+            g_warning ("Failed to emit SeatNew: %s", error->message);
+        g_clear_error (&error);
+    }
+
+    return seat;
+}
+
+static Login1Seat *
+find_login1_seat (const gchar *id)
+{
+    Login1Seat *seat;
+    GList *link;
+
+    for (link = login1_seats; link; link = link->next)
+    {
+        seat = link->data;
+        if (strcmp (seat->id, id) == 0)
+            return seat;
+    }
+
+    return NULL;
+}
+
+static void
+remove_login1_seat (GDBusConnection *connection, const gchar *id)
+{
+    Login1Seat *seat;
+    GError *error = NULL;
+
+    seat = find_login1_seat (id);
+    if (!seat)
+        return;
+
+    g_dbus_connection_emit_signal (connection,
+                                   NULL,
+                                   "/org/freedesktop/login1",
+                                   "org.freedesktop.login1.Manager",
+                                   "SeatRemoved",
+                                   g_variant_new ("(so)", seat->id, seat->path),
+                                   &error);
+    if (error)
+        g_warning ("Failed to emit SeatNew: %s", error->message);
+    g_clear_error (&error);
+  
+    login1_seats = g_list_remove (login1_seats, seat);
+    g_free (seat->id);
+    g_free (seat->path);
+    g_free (seat);
+}
+
+static void
 handle_login1_session_call (GDBusConnection       *connection,
                             const gchar           *sender,
                             const gchar           *object_path,
@@ -1278,45 +1602,12 @@ handle_login1_session_call (GDBusConnection       *connection,
                             GDBusMethodInvocation *invocation,
                             gpointer               user_data)
 {
-    Login1Session *session = user_data;
-
-    if (strcmp (method_name, "Lock") == 0)
-    {
-        if (!session->locked)
-        {
-            gchar *status = g_strdup_printf ("LOGIN1 LOCK-SESSION SESSION=%s", strrchr (object_path, '/') + 1);
-            check_status (status);
-            g_free (status);
-        }
-        session->locked = TRUE;
-        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
-    }
-    else if (strcmp (method_name, "Unlock") == 0)
-    {
-        if (session->locked)
-        {
-            gchar *status = g_strdup_printf ("LOGIN1 UNLOCK-SESSION SESSION=%s", strrchr (object_path, '/') + 1);
-            check_status (status);
-            g_free (status);
-        }
-        session->locked = FALSE;
-        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
-    }
-    else if (strcmp (method_name, "Activate") == 0)
-    {
-        gchar *status = g_strdup_printf ("LOGIN1 ACTIVATE-SESSION SESSION=%s", strrchr (object_path, '/') + 1);
-        check_status (status);
-        g_free (status);
-
-        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
-    }
-    else
-        g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
+    /*Login1Session *session = user_data;*/
+    g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such method: %s", method_name);
 }
 
 static Login1Session *
-open_login1_session (GDBusConnection *connection,
-                     GVariant *params)
+create_login1_session (GDBusConnection *connection)
 {
     Login1Session *session;
     GError *error = NULL;
@@ -1325,9 +1616,6 @@ open_login1_session (GDBusConnection *connection,
     const gchar *login1_session_interface =
         "<node>"
         "  <interface name='org.freedesktop.login1.Session'>"
-        "    <method name='Lock'/>"
-        "    <method name='Unlock'/>"
-        "    <method name='Activate'/>"
         "  </interface>"
         "</node>";
     static const GDBusInterfaceVTable login1_session_vtable =
@@ -1338,16 +1626,12 @@ open_login1_session (GDBusConnection *connection,
     session = g_malloc0 (sizeof (Login1Session));
     login1_sessions = g_list_append (login1_sessions, session);
 
-    session->path = g_strdup_printf("/org/freedesktop/login1/Session/c%d",
-                                    login1_session_index++);
+    session->id = g_strdup_printf ("c%d", login1_session_index++);
+    session->path = g_strdup_printf ("/org/freedesktop/login1/Session/%s", session->id);
 
-
-
-    login1_session_info = g_dbus_node_info_new_for_xml (login1_session_interface,
-                                                        &error);
+    login1_session_info = g_dbus_node_info_new_for_xml (login1_session_interface, &error);
     if (error)
-        g_warning ("Failed to parse login1 session D-Bus interface: %s",
-                   error->message);
+        g_warning ("Failed to parse login1 session D-Bus interface: %s", error->message);
     g_clear_error (&error);
     if (!login1_session_info)
         return NULL;
@@ -1367,6 +1651,20 @@ open_login1_session (GDBusConnection *connection,
     return session;
 }
 
+static Login1Session *
+find_login1_session (const gchar *id)
+{
+    GList *link;
+
+    for (link = login1_sessions; link; link = link->next)
+    {
+        Login1Session *session = link->data;
+        if (strcmp (session->id, id) == 0)
+            return session;
+    }
+
+    return NULL;
+}
 
 static void
 handle_login1_call (GDBusConnection       *connection,
@@ -1378,34 +1676,89 @@ handle_login1_call (GDBusConnection       *connection,
                     GDBusMethodInvocation *invocation,
                     gpointer               user_data)
 {
-
-    if (strcmp (method_name, "GetSessionByPID") == 0)
+    if (strcmp (method_name, "ListSeats") == 0)
     {
-        /* Look for a session with our PID, and create one if we don't have one
-           already. */
+        GVariantBuilder seats;
         GList *link;
-        guint pid;
-        Login1Session *ret = NULL;
 
-        g_variant_get (parameters, "(u)", &pid);
-
-        for (link = login1_sessions; link; link = link->next)
+        g_variant_builder_init (&seats, G_VARIANT_TYPE ("a(so)"));
+        for (link = login1_seats; link; link = link->next)
         {
-            Login1Session *session;
-            session = link->data;
-            if (session->pid == pid)
-            {
-                ret = session;
-                break;
-            }
+            Login1Seat *seat = link->data;
+            g_variant_builder_add (&seats, "(so)", seat->id, seat->path);
         }
-        /* Not found */
-        if (!ret)
-            ret = open_login1_session (connection, parameters);
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("(a(so))", &seats));
+    }
+    else if (strcmp (method_name, "CreateSession") == 0)
+    {
+        /* Note: this is not the full CreateSession as used by logind, we just
+           need one so our fake PAM stack can communicate with this service */
+        Login1Session *session = create_login1_session (connection);
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("(so)", session->id, session->path));
 
-        g_dbus_method_invocation_return_value (invocation,
-                                               g_variant_new("(o)", ret->path));
+    }
+    else if (strcmp (method_name, "LockSession") == 0)
+    {
+        const gchar *id;
+        Login1Session *session;
 
+        g_variant_get (parameters, "(&s)", &id);
+        session = find_login1_session (id);
+        if (!session)
+        {
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such session: %s", id);
+            return;
+        }
+
+        if (!session->locked)
+        {
+            gchar *status = g_strdup_printf ("LOGIN1 LOCK-SESSION SESSION=%s", id);
+            check_status (status);
+            g_free (status);
+        }
+        session->locked = TRUE;
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    }
+    else if (strcmp (method_name, "UnlockSession") == 0)
+    {
+        const gchar *id;
+        Login1Session *session;
+
+        g_variant_get (parameters, "(&s)", &id);
+        session = find_login1_session (id);
+        if (!session)
+        {
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such session: %s", id);
+            return;
+        }
+
+        if (session->locked)
+        {
+            gchar *status = g_strdup_printf ("LOGIN1 UNLOCK-SESSION SESSION=%s", id);
+            check_status (status);
+            g_free (status);
+        }
+        session->locked = FALSE;
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
+    }
+    else if (strcmp (method_name, "ActivateSession") == 0)
+    {
+        const gchar *id;
+        Login1Session *session;
+
+        g_variant_get (parameters, "(&s)", &id);
+        session = find_login1_session (id);
+        if (!session)
+        {
+            g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_FAILED, "No such session: %s", id);
+            return;
+        }
+
+        gchar *status = g_strdup_printf ("LOGIN1 ACTIVATE-SESSION SESSION=%s", id);
+        check_status (status);
+        g_free (status);
+
+        g_dbus_method_invocation_return_value (invocation, g_variant_new ("()"));
     }
     else if (strcmp (method_name, "CanReboot") == 0)
     {
@@ -1467,9 +1820,21 @@ login1_name_acquired_cb (GDBusConnection *connection,
     const gchar *login1_interface =
         "<node>"
         "  <interface name='org.freedesktop.login1.Manager'>"
-        "    <method name='GetSessionByPID'>"
-        "      <arg name='pid' type='u' direction='in'/>"
-        "      <arg name='session' type='o' direction='out'/>"
+        "    <method name='ListSeats'>"
+        "      <arg name='seats' type='a(so)' direction='out'/>"
+        "    </method>"
+        "    <method name='CreateSession'>"
+        "      <arg name='id' type='s' direction='out'/>"
+        "      <arg name='path' type='o' direction='out'/>"
+        "    </method>"
+        "    <method name='LockSession'>"
+        "      <arg name='id' type='s' direction='in'/>"
+        "    </method>"
+        "    <method name='UnlockSession'>"
+        "      <arg name='id' type='s' direction='in'/>"
+        "    </method>"
+        "    <method name='ActivateSession'>"
+        "      <arg name='id' type='s' direction='in'/>"
         "    </method>"
         "    <method name='CanReboot'>"
         "      <arg name='result' direction='out' type='s'/>"
@@ -1495,6 +1860,12 @@ login1_name_acquired_cb (GDBusConnection *connection,
         "    <method name='Hibernate'>"
         "      <arg name='interactive' direction='in' type='b'/>"
         "    </method>"
+        "    <signal name='SeatNew'>"
+        "      <arg name='seat' type='so'/>"
+        "    </signal>"
+        "    <signal name='SeatRemoved'>"
+        "      <arg name='seat' type='so'/>"
+        "    </signal>"
         "  </interface>"
         "</node>";
     static const GDBusInterfaceVTable login1_vtable =
@@ -1502,6 +1873,7 @@ login1_name_acquired_cb (GDBusConnection *connection,
         handle_login1_call,
     };
     GDBusNodeInfo *login1_info;
+    Login1Seat *seat0;
     GError *error = NULL;
 
     login1_info = g_dbus_node_info_new_for_xml (login1_interface, &error);
@@ -1520,6 +1892,13 @@ login1_name_acquired_cb (GDBusConnection *connection,
         g_warning ("Failed to register login1 service: %s", error->message);
     g_clear_error (&error);
     g_dbus_node_info_unref (login1_info);
+
+    /* We always have seat0 */
+    seat0 = add_login1_seat (connection, "seat0", FALSE);
+    if (g_key_file_has_key (config, "test-runner-config", "seat0-can-graphical", NULL))
+        seat0->can_graphical = g_key_file_get_boolean (config, "test-runner-config", "seat0-can-graphical", NULL);
+    if (g_key_file_has_key (config, "test-runner-config", "seat0-can-multi-session", NULL))
+        seat0->can_multi_session = g_key_file_get_boolean (config, "test-runner-config", "seat0-can-multi-session", NULL);
 
     service_count--;
     if (service_count == 0)

@@ -243,8 +243,8 @@ session_child_run (int argc, char **argv)
     XAuthority *x_authority = NULL;
     gchar *x_authority_filename;
     GDBusConnection *bus;
+    const gchar *login1_session = NULL;
     gchar *console_kit_cookie = NULL;
-    gchar *login1_session = NULL;
     const gchar *locale_value;
     gchar *locale_var;
     static const gchar * const locale_var_names[] = {
@@ -547,15 +547,16 @@ session_child_run (int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    if (login1_is_running ())
+    /* Check what logind session we are, or fallback to ConsoleKit */
+    login1_session = pam_getenv (pam_handle, "XDG_SESSION_ID");
+    if (login1_session)
     {
-        login1_session = login1_get_session_id ();
         write_string (login1_session);
+        if (version >= 2)
+            write_string (NULL);
     }
-
-    if (!login1_session)
+    else
     {
-        /* Open a Console Kit session */
         g_variant_builder_init (&ck_parameters, G_VARIANT_TYPE ("(a(sv))"));
         g_variant_builder_open (&ck_parameters, G_VARIANT_TYPE ("a(sv)"));
         g_variant_builder_add (&ck_parameters, "(sv)", "unix-user", g_variant_new_int32 (user_get_uid (user)));
@@ -575,6 +576,8 @@ session_child_run (int argc, char **argv)
         else
             g_variant_builder_add (&ck_parameters, "(sv)", "is-local", g_variant_new_boolean (TRUE));
         console_kit_cookie = ck_open_session (&ck_parameters);
+        if (version >= 2)
+            write_string (NULL);
         write_string (console_kit_cookie);
         if (console_kit_cookie)
         {

@@ -314,7 +314,8 @@ static gboolean
 send_message (LightDMGreeter *greeter, guint8 *message, gsize message_length)
 {
     LightDMGreeterPrivate *priv = GET_PRIVATE (greeter);
-    GIOStatus status;
+    gchar *data;
+    gsize data_length;
     GError *error = NULL;
     guint32 stated_length;
 
@@ -333,15 +334,28 @@ send_message (LightDMGreeter *greeter, guint8 *message, gsize message_length)
         return FALSE;
     }
 
-    status = g_io_channel_write_chars (priv->to_server_channel, (gchar *) message, message_length, NULL, &error);
-    if (error)
-        g_warning ("Error writing to daemon: %s", error->message);
-    g_clear_error (&error);
-    if (status != G_IO_STATUS_NORMAL)
-        return FALSE;
+    data = (gchar *) message;
+    data_length = message_length;
+    while (data_length > 0)
+    {
+        GIOStatus status;
+        gsize n_written;
+
+        status = g_io_channel_write_chars (priv->to_server_channel, data, data_length, &n_written, &error);
+        if (error)
+            g_warning ("Error writing to daemon: %s", error->message);
+        g_clear_error (&error);
+        if (status != G_IO_STATUS_NORMAL)
+            return FALSE;
+        data_length -= n_written;
+        data += n_written;
+    }
 
     g_debug ("Wrote %zi bytes to daemon", message_length);
-    g_io_channel_flush (priv->to_server_channel, NULL);
+    g_io_channel_flush (priv->to_server_channel, &error);
+    if (error)
+        g_warning ("Failed to flush data to daemon: %s", error->message);
+    g_clear_error (&error);
 
     return TRUE;
 }
@@ -1916,16 +1930,9 @@ request_get_source_object (GAsyncResult *res)
     return NULL;
 }
 
-static gboolean
-request_is_tagged (GAsyncResult *res, gpointer source_tag)
-{
-    return FALSE;
-}
-
 static void
 request_iface_init (GAsyncResultIface *iface)
 {
     iface->get_user_data = request_get_user_data;
     iface->get_source_object = request_get_source_object;
-    iface->is_tagged = request_is_tagged;
 }

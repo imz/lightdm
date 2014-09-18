@@ -1,3 +1,73 @@
+lightdm (1.11.9-0ubuntu1) utopic; urgency=medium
+
+    * New upstream release:
+     - Don't check the logind CanGraphical seat property unless
+       login-check-graphical option is set to true. There are too many cases of
+       drivers that don't set the appropriate flags for this feature to work.
+       (LP: #1365336)
+     - Make socket writing code used between greeter and daemon more robust to
+       errors.
+     - Fix small memory leaks.
+     - Improve logging messages.
+     - Test improvements.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 10 Sep 2014 15:47:36 +1200
+
+lightdm (1.11.8-0ubuntu2) utopic; urgency=medium
+
+  * debian/patches/06_apparmor-unix.patch: updates for unix socket mediation
+    (LP: #1362199)
+
+ -- Jamie Strandboge <jamie@ubuntu.com>  Fri, 05 Sep 2014 17:34:03 -0500
+
+lightdm (1.11.8-0ubuntu1) utopic; urgency=medium
+
+  * New upstream release:
+    - Rework logind code that gets session ID. The previous method was racy
+      and a change in lightdm 1.11.7 led to a lockup when this race occurred.
+      (LP: #1364725)
+    - Handle CanGraphical property on logind seats
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 03 Sep 2014 17:26:36 +1200
+
+lightdm (1.11.7-0ubuntu1) utopic; urgency=medium
+
+  * New upstream release:
+    - Use logind to provide the list of seats to use. Deprecate the old method
+      of manually defining seats.
+    - Add --show-config option that shows combined configuration.
+    - Drop the surfaceflinger seat type. This was a temporary solution while
+      Ubuntu Phone was migrating to Mir.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 27 Aug 2014 16:25:53 +1200
+
+lightdm (1.11.6-0ubuntu1) utopic; urgency=medium
+
+  * New upstream release:
+    * Add a seat option 'allow-user-switching' that can disable all user
+      switching for that seat
+    * Add a new session type 'mir-container' that allows the session to run
+      inside a custom system compositor (LP: #1359332)
+    * Only seat0 takes VT from Plymouth
+    * Removed unused GAsyncResultIface.is_tagged as this attribute was not
+      available in earlier versions of Glib I/O.
+    * Abort autogen if yelp-tools not installed
+    * Return correct errors for D-Bus calls
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Fri, 22 Aug 2014 09:10:29 +1200
+
+lightdm (1.11.5-0ubuntu1) utopic; urgency=medium
+
+  * New upstream release:
+    - Make PAM services configurable (LP: #1348251)
+  * debian/guest-account:
+  * debian/lightdm.install:
+  * debian/rules:
+  * debian/patches/05_translate_debian_files.patch:
+    - Make the real name of a guest account translatable (LP: #1177713)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 28 Jul 2014 13:40:46 +1200
+
 lightdm (1.11.4-0ubuntu1) utopic; urgency=medium
 
   * New upstream release:

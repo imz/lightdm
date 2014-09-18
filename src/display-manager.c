@@ -20,7 +20,6 @@
 #include "seat-xlocal.h"
 #include "seat-xremote.h"
 #include "seat-unity.h"
-#include "seat-surfaceflinger.h"
 #include "plymouth.h"
 
 enum {
@@ -55,6 +54,22 @@ GList *
 display_manager_get_seats (DisplayManager *manager)
 {
     return manager->priv->seats;
+}
+
+Seat *
+display_manager_get_seat (DisplayManager *manager, const gchar *name)
+{
+    GList *link;
+
+    for (link = manager->priv->seats; link; link = link->next)
+    {
+        Seat *seat = link->data;
+
+        if (strcmp (seat_get_name (seat), name) == 0)
+            return seat;
+    }
+
+    return NULL;
 }
 
 static void
@@ -150,7 +165,6 @@ display_manager_init (DisplayManager *manager)
     seat_register_module ("xlocal", SEAT_XLOCAL_TYPE);
     seat_register_module ("xremote", SEAT_XREMOTE_TYPE);
     seat_register_module ("unity", SEAT_UNITY_TYPE);
-    seat_register_module ("surfaceflinger", SEAT_SURFACEFLINGER_TYPE);
 }
 
 static void

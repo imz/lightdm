@@ -20,6 +20,7 @@ TESTS = \
 	test-headless \
 	test-autologin \
 	test-autologin-pam \
+	test-autologin-pam-config \
 	test-autologin-in-background \
 	test-autologin-guest-in-background \
 	test-autologin-timeout-in-background \
@@ -37,6 +38,7 @@ TESTS = \
 	test-restart-authentication \
 	test-cancel-authentication-gobject \
 	test-login-pam \
+	test-login-pam-config \
 	test-denied \
 	test-expired \
 	test-cred-error \
@@ -54,7 +56,6 @@ TESTS = \
 	test-login-guest-session-config \
 	test-group-membership \
 	test-xdg-current-desktop \
-	test-xdg-seat \
 	test-language-env \
 	test-session-stdout \
 	test-session-stderr \
@@ -136,14 +137,17 @@ TESTS = \
 	test-lock-seat-console-kit \
 	test-lock-seat-return-session-console-kit \
 	test-switch-to-greeter \
+	test-switch-to-greeter-disabled \
 	test-switch-to-greeter-new-session \
 	test-switch-to-greeter-resettable \
 	test-switch-to-greeter-return-session \
 	test-switch-to-greeter-return-session-pam \
 	test-switch-to-greeter-return-session-logout \
 	test-switch-to-guest \
+	test-switch-to-guest-disabled \
 	test-switch-to-guest-fail-resettable \
 	test-switch-to-user \
+	test-switch-to-user-disabled \
 	test-switch-to-user-no-password \
 	test-switch-to-user-active \
 	test-switch-to-user-existing \
@@ -177,11 +181,18 @@ TESTS = \
 	test-open-file-descriptors \
 	test-xdmcp-server-open-file-descriptors \
 	test-multi-seat \
+	test-multi-seat-seat0-non-graphical \
+	test-multi-seat-seat0-non-graphical-disabled \
+	test-multi-seat-non-graphical \
+	test-multi-seat-non-graphical-disabled \
+	test-multi-seat-change-graphical \
+	test-multi-seat-change-graphical-disabled \
 	test-mir-autologin \
 	test-mir-greeter \
 	test-mir-session \
 	test-mir-session-crash \
 	test-mir-session-compositor-crash \
+	test-mir-container-session \
 	test-unity-compositor-command \
 	test-unity-compositor-not-found \
 	test-unity-compositor-fail-start \
@@ -200,9 +211,7 @@ TESTS = \
 	test-unity-mir-lock-seat \
 	test-unity-mir-session-x-greeter \
 	test-unity-mir-switch \
-	test-unity-mir-switch-to-user-resettable \
-	test-unity-xdg-seat \
-	test-surfaceflinger-autologin
+	test-unity-mir-switch-to-user-resettable
 
 #	test-session-exit-error
 #	test-greeter-no-exit
@@ -332,8 +341,8 @@ EXTRA_DIST = \
 	data/sessions/alternative.desktop \
 	data/sessions/default.desktop \
 	data/sessions/mir.desktop \
+	data/sessions/mir-container.desktop \
 	data/sessions/named.desktop \
-	data/sessions/surfaceflinger.desktop \
 	scripts/0-additional.conf \
 	scripts/1-additional.conf \
 	scripts/additional-config.conf \
@@ -350,6 +359,7 @@ EXTRA_DIST = \
 	scripts/autologin-in-background.conf \
 	scripts/autologin-invalid-greeter.conf \
 	scripts/autologin-pam.conf \
+	scripts/autologin-pam-config.conf \
 	scripts/autologin-invalid-session.conf \
 	scripts/autologin-invalid-user.conf \
 	scripts/autologin-logout.conf \
@@ -424,6 +434,7 @@ EXTRA_DIST = \
 	scripts/login-new-authtok.conf \
 	scripts/login-no-password.conf \
 	scripts/login-pam.conf \
+	scripts/login-pam-config.conf \
 	scripts/login-pick-session.conf \
 	scripts/login-previous-session.conf \
 	scripts/login-remember-session.conf \
@@ -433,11 +444,18 @@ EXTRA_DIST = \
 	scripts/login-wrong-password.conf \
 	scripts/login-xserver-crash.conf \
 	scripts/mir-autologin.conf \
+	scripts/mir-container-session.conf \
 	scripts/mir-greeter.conf \
 	scripts/mir-session.conf \
 	scripts/mir-session-compositor-crash.conf \
 	scripts/mir-session-crash.conf \
 	scripts/multi-seat.conf \
+	scripts/multi-seat-change-graphical.conf \
+	scripts/multi-seat-change-graphical-disabled.conf \
+	scripts/multi-seat-non-graphical.conf \
+	scripts/multi-seat-non-graphical-disabled.conf \
+	scripts/multi-seat-seat0-non-graphical.conf \
+	scripts/multi-seat-seat0-non-graphical-disabled.conf \
 	scripts/no-accounts-service.conf \
 	scripts/no-config.conf \
 	scripts/no-console-kit.conf \
@@ -467,18 +485,20 @@ EXTRA_DIST = \
 	scripts/session-stderr.conf \
 	scripts/session-stderr-multi-write.conf \
 	scripts/session-stderr-backup.conf \
-	scripts/surfaceflinger-autologin.conf \
 	scripts/switch-to-greeter.conf \
+	scripts/switch-to-greeter-disabled.conf \
 	scripts/switch-to-greeter-new-session.conf \
 	scripts/switch-to-greeter-resettable.conf \
 	scripts/switch-to-greeter-return-session.conf \
 	scripts/switch-to-greeter-return-session-logout.conf \
 	scripts/switch-to-greeter-return-session-pam.conf \
 	scripts/switch-to-guest.conf \
+	scripts/switch-to-guest-disabled.conf \
 	scripts/switch-to-guest-fail-resettable.conf \
 	scripts/switch-to-user.conf \
 	scripts/switch-to-users.conf \
 	scripts/switch-to-user-active.conf \
+	scripts/switch-to-user-disabled.conf \
 	scripts/switch-to-user-existing.conf \
 	scripts/switch-to-user-existing-no-password.conf \
 	scripts/switch-to-user-existing-resettable.conf \
@@ -507,7 +527,6 @@ EXTRA_DIST = \
 	scripts/unity-mir-switch-to-user-resettable.conf \
 	scripts/unity-plymouth.conf \
 	scripts/unity-switch.conf \
-	scripts/unity-xdg-seat.conf \
 	scripts/upstart-autologin.conf \
 	scripts/upstart-login.conf \
 	scripts/users.conf \
@@ -530,7 +549,6 @@ EXTRA_DIST = \
 	scripts/vnc-open-file-descriptors.conf \
 	scripts/xauthority.conf \
 	scripts/xdg-current-desktop.conf \
-	scripts/xdg-seat.conf \
 	scripts/xdmcp-client.conf \
 	scripts/xdmcp-server-autologin.conf \
 	scripts/xdmcp-server-double-login.conf \

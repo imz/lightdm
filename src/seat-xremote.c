@@ -20,17 +20,19 @@ G_DEFINE_TYPE (SeatXRemote, seat_xremote, SEAT_TYPE);
 static void
 seat_xremote_setup (Seat *seat)
 {
-    seat_set_can_switch (seat, FALSE);
+    seat_set_supports_multi_session (seat, FALSE);
     SEAT_CLASS (seat_xremote_parent_class)->setup (seat);
 }
 
 static DisplayServer *
-seat_xremote_create_display_server (Seat *seat, const gchar *session_type)
+seat_xremote_create_display_server (Seat *seat, Session *session)
 {
+    const gchar *session_type;
     XServerRemote *x_server;
     const gchar *hostname;
     gint number;
 
+    session_type = session_get_session_type (session);
     if (strcmp (session_type, "x") != 0)
     {
         l_warning (seat, "X remote seat only supports X display servers, not '%s'", session_type);

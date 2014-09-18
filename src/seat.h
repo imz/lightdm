@@ -30,7 +30,7 @@ typedef struct SeatPrivate SeatPrivate;
 
 typedef struct
 {
-    GObject         parent_instance;
+    GObject      parent_instance;
     SeatPrivate *priv;
 } Seat;
 
@@ -38,10 +38,9 @@ typedef struct
 {
     GObjectClass parent_class;
 
-    gboolean (*get_start_local_sessions) (Seat *seat);
     void (*setup)(Seat *seat);
     gboolean (*start)(Seat *seat);
-    DisplayServer *(*create_display_server) (Seat *seat, const gchar *session_type);
+    DisplayServer *(*create_display_server) (Seat *seat, Session *session);
     gboolean (*display_server_supports_session_type) (Seat *seat, DisplayServer *display_server, const gchar *session_type);
     Greeter *(*create_greeter_session) (Seat *seat);
     Session *(*create_session) (Seat *seat);
@@ -61,7 +60,7 @@ GType seat_get_type (void);
 
 void seat_register_module (const gchar *name, GType type);
 
-Seat *seat_new (const gchar *module_name);
+Seat *seat_new (const gchar *module_name, const gchar *name);
 
 void seat_set_property (Seat *seat, const gchar *name, const gchar *value);
 
@@ -75,7 +74,7 @@ gint seat_get_integer_property (Seat *seat, const gchar *name);
 
 const gchar *seat_get_name (Seat *seat);
 
-void seat_set_can_switch (Seat *seat, gboolean can_switch);
+void seat_set_supports_multi_session (Seat *seat, gboolean supports_multi_session);
 
 void seat_set_share_display_server (Seat *seat, gboolean share_display_server);
 
