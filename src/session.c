@@ -459,6 +459,8 @@ session_watch_cb (GPid pid, gint status, gpointer data)
     if (session->priv->is_guest)
         guest_account_cleanup (session->priv->username);
 
+    close(session->priv->to_child_input);
+    close(session->priv->from_child_output);
     /* Drop our reference on the child process, it has terminated */
     g_object_unref (session);
 }
