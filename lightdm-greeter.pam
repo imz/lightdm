@@ -1,7 +1,7 @@
 #%PAM-1.0
 
 account		required	pam_nologin.so
-ccount		required	pam_succeed_if.so audit quiet_success user = _ldm
+account		required	pam_succeed_if.so audit quiet_success user = _ldm
 account		required	pam_permit.so
 auth		required	pam_env.so
 auth		required	pam_succeed_if.so audit quiet_success user = _ldm
