@@ -3,9 +3,10 @@
 %def_enable gobject
 %def_enable introspection
 %def_enable qt
+%def_enable qt5
 
 Name: lightdm
-Version: 1.11.4
+Version: 1.11.9
 Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
@@ -29,16 +30,18 @@ Patch1: %name-%version-%release.patch
 # Requires: accountsservice
 Requires: dbus-tools-gui
 
-BuildRequires: gcc-c++ intltool gnome-common
-BuildRequires: glib2-devel libgio-devel >= 2.30
-BuildRequires: libxcb-devel libXdmcp-devel
+BuildRequires: gcc-c++ intltool
+BuildRequires: pkgconfig(glib-2.0) >= 2.30 pkgconfig(gio-2.0) >= 2.26  pkgconfig(gio-unix-2.0)  pkgconfig(xdmcp)  pkgconfig(xcb)
+BuildRequires: pkgconfig(gobject-2.0)
+BuildRequires: pkgconfig(xcb)
 BuildRequires: libdbus-glib-devel
 BuildRequires: gtk-doc yelp-tools itstool
 BuildRequires: libpam-devel
 BuildRequires: libgcrypt-devel
-%{?_enable_gobject:BuildRequires: libxklavier-devel libX11-devel}
+%{?_enable_gobject:BuildRequires: pkgconfig(glib-2.0) pkgconfig(gio-2.0) >= 2.26 pkgconfig(gio-unix-2.0) pkgconfig(gobject-2.0) pkgconfig(libxklavier) pkgconfig(x11)}
 %{?_enable_introspection:BuildRequires: gobject-introspection-devel}
-%{?_enable_qt:BuildRequires: libqt4-devel}
+%{?_enable_qt:BuildRequires: pkgconfig(QtCore) pkgconfig(QtDBus) pkgconfig(QtGui) /usr/bin/moc-qt4}
+%{?_enable_qt5:BuildRequires: pkgconfig(Qt5Core) pkgconfig(Qt5DBus) pkgconfig(Qt5Gui) /usr/bin/moc-qt5}
 
 %description
 LightDM is a lightweight, cross-desktop display manager. Its main features are
@@ -63,6 +66,15 @@ License: LGPLv2+
 
 %description -n liblightdm-qt
 A library for LightDM greeters based on Qt which interfaces with LightDM and
+provides common greeter functionality.
+
+%package -n liblightdm-qt5
+Group: System/Libraries
+Summary: LightDM Qt5 Greeter Library
+License: LGPLv2+
+
+%description -n liblightdm-qt5
+A library for LightDM greeters based on Qt5 which interfaces with LightDM and
 provides common greeter functionality.
 
 %package devel
@@ -100,24 +112,6 @@ Requires: %name-gir = %version-%release
 %description gir-devel
 GObject introspection devel data for the %name
 
-%package gtk-greeter
-Group: Graphical desktop/Other
-Summary: LightDM GTK+ Greeter
-Requires: %name = %version-%release
-Provides: %name-greeter
-
-%description gtk-greeter
-This package provides a GTK+-based LightDM greeter engine.
-
-%package qt-greeter
-Group: Graphical desktop/Other
-Summary: LightDM Qt Greeter
-Requires: %name = %version-%release
-Provides: %name-greeter
-
-%description qt-greeter
-This package provides a Qt-based LightDM greeter engine.
-
 %prep
 %setup
 %patch1 -p1
@@ -129,13 +123,9 @@ This package provides a Qt-based LightDM greeter engine.
 	--disable-static \
 	--disable-tests \
 	--enable-gtk-doc \
-%if_enabled gobject
-	--enable-liblightdm-gobject \
-%endif
-%if_enabled qt
-	--enable-liblightdm-qt \
-	--disable-liblightdm-qt5 \
-%endif
+	%{?_enable_gobject:--enable-liblightdm-gobject} \
+	%{?_enable_qt:--enable-liblightdm-qt} \
+	%{?_enable_qt5:--enable-liblightdm-qt5} \
 	--with-user-session=default \
 	--libexecdir=%_libexecdir \
 	--with-greeter-user=_ldm \
@@ -241,6 +231,11 @@ fi
 %_libdir/liblightdm-qt-?.so.*
 %endif
 
+%if_enabled qt5
+%files -n liblightdm-qt5
+%_libdir/liblightdm-qt5-?.so.*
+%endif
+
 %files devel
 %_libdir/*.so
 %_includedir/*
@@ -251,6 +246,9 @@ fi
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Thu Sep 18 2014 Alexey Shabalin <shaba@altlinux.ru> 1.11.9-alt1
+- 1.11.9
+
 * Tue Jul 01 2014 Alexey Shabalin <shaba@altlinux.ru> 1.11.4-alt1
 - 1.11.4
 - add systemd unit
