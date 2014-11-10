@@ -96,8 +96,8 @@ typedef struct
     /* User list this user is part of */
     CommonUserList *user_list;
 
-    /* TRUE if have loaded user properties */
-    gboolean loaded_values;
+    /* TRUE if have loaded the DMRC file */
+    gboolean loaded_dmrc;
 
     /* Accounts service path */
     gchar *path;
@@ -463,9 +463,12 @@ accounts_user_changed_cb (GDBusConnection *connection,
                           gpointer data)
 {
     CommonUser *user = data;
-    CommonUserPrivate *priv = GET_USER_PRIVATE (user);  
+    /*CommonUserPrivate *priv = GET_USER_PRIVATE (user);*/
 
-    g_debug ("User %s changed", priv->path);
+    /* Log message disabled as AccountsService can have arbitrary plugins that
+     * might cause us to log when properties change we don't use. LP: #1376357
+     */
+    /*g_debug ("User %s changed", priv->path);*/
     if (load_accounts_user (user))
         g_signal_emit (user, user_signals[CHANGED], 0);
 }
@@ -584,8 +587,6 @@ load_accounts_user (CommonUser *user)
     g_variant_iter_free (iter);
 
     g_variant_unref (result);
-
-    priv->loaded_values = TRUE;
 
     return !system_account;
 }
@@ -1179,12 +1180,20 @@ save_string_to_dmrc (CommonUser *user, const gchar *group,
     g_key_file_free (dmrc);
 }
 
+/* Loads language/layout/session info for user */
 static void
 load_dmrc (CommonUser *user)
 {
     CommonUserPrivate *priv = GET_USER_PRIVATE (user);
     GKeyFile *dmrc;
 
+    /* We're using Accounts service instead */
+    if (priv->path)
+        return;
+
+    if (priv->loaded_dmrc)
+        return;
+    priv->loaded_dmrc = TRUE;
     dmrc = dmrc_load (user);
 
     // FIXME: Watch for changes
@@ -1207,20 +1216,6 @@ load_dmrc (CommonUser *user)
     g_key_file_free (dmrc);
 }
 
-/* Loads language/layout/session info for user */
-static void
-load_user_values (CommonUser *user)
-{
-    CommonUserPrivate *priv = GET_USER_PRIVATE (user);
-
-    if (priv->loaded_values)
-        return;
-    priv->loaded_values = TRUE;
-
-    if (!priv->path)
-        load_dmrc (user);
-}
-
 /**
  * common_user_get_name:
  * @user: A #CommonUser
@@ -1233,7 +1228,6 @@ const gchar *
 common_user_get_name (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
     return GET_USER_PRIVATE (user)->name;
 }
 
@@ -1249,7 +1243,6 @@ const gchar *
 common_user_get_real_name (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
     return GET_USER_PRIVATE (user)->real_name;
 }
 
@@ -1267,8 +1260,6 @@ common_user_get_display_name (CommonUser *user)
     CommonUserPrivate *priv;
 
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-
-    load_user_values (user);
 
     priv = GET_USER_PRIVATE (user);
     if (!priv->real_name || strcmp (priv->real_name, "") == 0)
@@ -1289,7 +1280,6 @@ const gchar *
 common_user_get_home_directory (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
     return GET_USER_PRIVATE (user)->home_directory;
 }
 
@@ -1305,7 +1295,6 @@ const gchar *
 common_user_get_shell (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
     return GET_USER_PRIVATE (user)->shell;
 }
 
@@ -1321,7 +1310,6 @@ const gchar *
 common_user_get_image (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
     return GET_USER_PRIVATE (user)->image;
 }
 
@@ -1337,7 +1325,6 @@ const gchar *
 common_user_get_background (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
     return GET_USER_PRIVATE (user)->background;
 }
 
@@ -1353,7 +1340,7 @@ const gchar *
 common_user_get_language (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
+    load_dmrc (user);
     const gchar *language = GET_USER_PRIVATE (user)->language;
     return (language && language[0] == 0) ? NULL : language; /* Treat "" as NULL */
 }
@@ -1388,7 +1375,7 @@ const gchar *
 common_user_get_layout (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
+    load_dmrc (user);
     return GET_USER_PRIVATE (user)->layouts[0];
 }
 
@@ -1404,7 +1391,7 @@ const gchar * const *
 common_user_get_layouts (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
+    load_dmrc (user);
     return (const gchar * const *) GET_USER_PRIVATE (user)->layouts;
 }
 
@@ -1420,7 +1407,7 @@ const gchar *
 common_user_get_session (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), NULL);
-    load_user_values (user);
+    load_dmrc (user);
     const gchar *session = GET_USER_PRIVATE (user)->session;
     return (session && session[0] == 0) ? NULL : session; /* Treat "" as NULL */
 }
@@ -1489,7 +1476,6 @@ gboolean
 common_user_get_has_messages (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), FALSE);
-    load_user_values (user);
     return GET_USER_PRIVATE (user)->has_messages;
 }
 
@@ -1505,7 +1491,6 @@ uid_t
 common_user_get_uid (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), 0);
-    load_user_values (user);
     return GET_USER_PRIVATE (user)->uid;
 }
 
@@ -1521,7 +1506,6 @@ gid_t
 common_user_get_gid (CommonUser *user)
 {
     g_return_val_if_fail (COMMON_IS_USER (user), 0);
-    load_user_values (user);
     /* gid is not actually stored in AccountsService, so if our user is from
        AccountsService, we have to look up manually in passwd.  gid won't
        change, so just look up the first time we're asked and never again. */
