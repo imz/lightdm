@@ -6,7 +6,7 @@
 %def_enable qt5
 
 Name: lightdm
-Version: 1.11.9
+Version: 1.12.1
 Release: alt1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
@@ -246,6 +246,9 @@ fi
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Mon Nov 10 2014 Alexey Shabalin <shaba@altlinux.ru> 1.12.1-alt1
+- 1.12.1
+
 * Thu Sep 18 2014 Alexey Shabalin <shaba@altlinux.ru> 1.11.9-alt1
 - 1.11.9
 
