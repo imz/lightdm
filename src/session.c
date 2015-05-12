@@ -655,6 +655,13 @@ session_get_username (Session *session)
 }
 
 const gchar *
+session_get_login1_session_id (Session *session)
+{
+    g_return_val_if_fail (session != NULL, NULL);
+    return session->priv->login1_session_id;
+}
+
+const gchar *
 session_get_console_kit_cookie (Session *session)
 {
     g_return_val_if_fail (session != NULL, NULL);
@@ -905,6 +912,8 @@ session_init (Session *session)
 {
     session->priv = G_TYPE_INSTANCE_GET_PRIVATE (session, SESSION_TYPE, SessionPrivate);
     session->priv->log_filename = g_strdup (".xsession-errors");
+    session->priv->to_child_input = -1;
+    session->priv->from_child_output = -1;
 }
 
 static void
@@ -919,6 +928,8 @@ session_finalize (GObject *object)
         g_object_unref (self->priv->display_server);
     if (self->priv->pid)
         kill (self->priv->pid, SIGKILL);
+    close (self->priv->to_child_input);
+    close (self->priv->from_child_output);
     if (self->priv->from_child_channel)
         g_io_channel_unref (self->priv->from_child_channel);
     if (self->priv->from_child_watch)
@@ -960,7 +971,7 @@ session_class_init (SessionClass *klass)
     g_type_class_add_private (klass, sizeof (SessionPrivate));
 
     signals[GOT_MESSAGES] =
-        g_signal_new ("got-messages",
+        g_signal_new (SESSION_SIGNAL_GOT_MESSAGES,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (SessionClass, got_messages),
@@ -969,7 +980,7 @@ session_class_init (SessionClass *klass)
                       G_TYPE_NONE, 0);
 
     signals[AUTHENTICATION_COMPLETE] =
-        g_signal_new ("authentication-complete",
+        g_signal_new (SESSION_SIGNAL_AUTHENTICATION_COMPLETE,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (SessionClass, authentication_complete),
@@ -978,7 +989,7 @@ session_class_init (SessionClass *klass)
                       G_TYPE_NONE, 0);
 
     signals[STOPPED] =
-        g_signal_new ("stopped",
+        g_signal_new (SESSION_SIGNAL_STOPPED,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (SessionClass, stopped),

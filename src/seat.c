@@ -269,6 +269,54 @@ seat_get_next_session (Seat *seat)
     return seat->priv->next_session;
 }
 
+/**
+ * Obtains the active session which lightdm expects to be active.
+ *
+ * This function is different from seat_get_active_session() in that the
+ * later (in the case of xlocal seats) dynamically finds the session that is
+ * really active (based on the active VT), whereas this function returns the
+ * session that lightdm activated last by itself, which may not be the actual
+ * active session (i.e. VT changes).
+ */
+Session *
+seat_get_expected_active_session (Seat *seat)
+{
+    g_return_val_if_fail (seat != NULL, NULL);
+    return seat->priv->active_session;
+}
+
+/**
+ * Sets the active session which lightdm expects to be active.
+ *
+ * This function is different from seat_set_active_session() in that the
+ * later performs an actual session activation, whereas this function just
+ * updates the active session after the session has been activated by some
+ * means external to lightdm (i.e. VT changes).
+ */
+void
+seat_set_externally_activated_session (Seat *seat, Session *session)
+{
+    g_return_if_fail (seat != NULL);
+    if (seat->priv->active_session)
+        g_object_unref (seat->priv->active_session);
+    seat->priv->active_session = g_object_ref (session);
+}
+
+Session *
+seat_find_session_by_login1_id (Seat *seat, const gchar *login1_session_id)
+{
+    GList *session_link;
+
+    for (session_link = seat->priv->sessions; session_link; session_link = session_link->next)
+    {
+        Session *session = session_link->data;
+        if (g_strcmp0 (login1_session_id, session_get_login1_session_id (session)) == 0)
+            return session;
+    }
+
+    return NULL;
+}
+
 gboolean
 seat_get_can_switch (Seat *seat)
 {
@@ -854,8 +902,8 @@ create_session (Seat *seat, gboolean autostart)
     session = SEAT_GET_CLASS (seat)->create_session (seat);
     seat->priv->sessions = g_list_append (seat->priv->sessions, session);
     if (autostart)
-        g_signal_connect (session, "authentication-complete", G_CALLBACK (session_authentication_complete_cb), seat);
-    g_signal_connect (session, "stopped", G_CALLBACK (session_stopped_cb), seat);
+        g_signal_connect (session, SESSION_SIGNAL_AUTHENTICATION_COMPLETE, G_CALLBACK (session_authentication_complete_cb), seat);
+    g_signal_connect (session, SESSION_SIGNAL_STOPPED, G_CALLBACK (session_stopped_cb), seat);
 
     set_session_env (session);
 
@@ -936,15 +984,20 @@ find_session_config (Seat *seat, const gchar *sessions_dir, const gchar *session
 static void
 configure_session (Session *session, SessionConfig *config, const gchar *session_name, const gchar *language)
 {
-    const gchar *desktop_name;
+    gchar **desktop_names;
 
     session_set_config (session, config);
     session_set_env (session, "XDG_SESSION_DESKTOP", session_name);
     session_set_env (session, "DESKTOP_SESSION", session_name);
     session_set_env (session, "GDMSESSION", session_name);
-    desktop_name = session_config_get_desktop_name (config);
-    if (desktop_name)
-        session_set_env (session, "XDG_CURRENT_DESKTOP", desktop_name);
+    desktop_names = session_config_get_desktop_names (config);
+    if (desktop_names)
+    {
+        gchar *value;
+        value = g_strjoinv (":", desktop_names);
+        session_set_env (session, "XDG_CURRENT_DESKTOP", value);
+        g_free (value);
+    }
     if (language && language[0] != '\0')
     {
         session_set_env (session, "LANG", language);
@@ -1215,9 +1268,9 @@ create_greeter_session (Seat *seat)
     greeter_session = SEAT_GET_CLASS (seat)->create_greeter_session (seat);
     session_set_config (SESSION (greeter_session), session_config);
     seat->priv->sessions = g_list_append (seat->priv->sessions, SESSION (greeter_session));
-    g_signal_connect (greeter_session, "notify::active-username", G_CALLBACK (greeter_active_username_changed_cb), seat);
-    g_signal_connect (greeter_session, "authentication-complete", G_CALLBACK (session_authentication_complete_cb), seat);
-    g_signal_connect (greeter_session, "stopped", G_CALLBACK (session_stopped_cb), seat);
+    g_signal_connect (greeter_session, GREETER_SIGNAL_ACTIVE_USERNAME_CHANGED, G_CALLBACK (greeter_active_username_changed_cb), seat);
+    g_signal_connect (greeter_session, SESSION_SIGNAL_AUTHENTICATION_COMPLETE, G_CALLBACK (session_authentication_complete_cb), seat);
+    g_signal_connect (greeter_session, SESSION_SIGNAL_STOPPED, G_CALLBACK (session_stopped_cb), seat);
 
     set_session_env (SESSION (greeter_session));
     session_set_env (SESSION (greeter_session), "XDG_SESSION_CLASS", "greeter");
@@ -1241,8 +1294,8 @@ create_greeter_session (Seat *seat)
     greeter_set_pam_services (greeter_session,
                               seat_get_string_property (seat, "pam-service"),
                               seat_get_string_property (seat, "pam-autologin-service"));
-    g_signal_connect (greeter_session, "create-session", G_CALLBACK (greeter_create_session_cb), seat);
-    g_signal_connect (greeter_session, "start-session", G_CALLBACK (greeter_start_session_cb), seat);
+    g_signal_connect (greeter_session, GREETER_SIGNAL_CREATE_SESSION, G_CALLBACK (greeter_create_session_cb), seat);
+    g_signal_connect (greeter_session, GREETER_SIGNAL_START_SESSION, G_CALLBACK (greeter_start_session_cb), seat);
 
     /* Set hints to greeter */
     greeter_set_allow_guest (greeter_session, seat_get_allow_guest (seat));
@@ -1338,8 +1391,8 @@ create_display_server (Seat *seat, Session *session)
         return NULL;
 
     seat->priv->display_servers = g_list_append (seat->priv->display_servers, display_server);
-    g_signal_connect (display_server, "ready", G_CALLBACK (display_server_ready_cb), seat);
-    g_signal_connect (display_server, "stopped", G_CALLBACK (display_server_stopped_cb), seat);
+    g_signal_connect (display_server, DISPLAY_SERVER_SIGNAL_READY, G_CALLBACK (display_server_ready_cb), seat);
+    g_signal_connect (display_server, DISPLAY_SERVER_SIGNAL_STOPPED, G_CALLBACK (display_server_stopped_cb), seat);
 
     return display_server;
 }
@@ -1470,7 +1523,7 @@ seat_switch_to_user (Seat *seat, const gchar *username, const gchar *session_nam
 
     /* Attempt to authenticate them */
     session = create_user_session (seat, username, FALSE);
-    g_signal_connect (session, "authentication-complete", G_CALLBACK (switch_authentication_complete_cb), seat);
+    g_signal_connect (session, SESSION_SIGNAL_AUTHENTICATION_COMPLETE, G_CALLBACK (switch_authentication_complete_cb), seat);
     session_set_pam_service (session, seat_get_string_property (seat, "pam-service"));
 
     return session_start (session);
@@ -1837,7 +1890,7 @@ seat_class_init (SeatClass *klass)
     g_type_class_add_private (klass, sizeof (SeatPrivate));
 
     signals[SESSION_ADDED] =
-        g_signal_new ("session-added",
+        g_signal_new (SEAT_SIGNAL_SESSION_ADDED,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (SeatClass, session_added),
@@ -1845,7 +1898,7 @@ seat_class_init (SeatClass *klass)
                       NULL,
                       G_TYPE_NONE, 1, SESSION_TYPE);
     signals[RUNNING_USER_SESSION] =
-        g_signal_new ("running-user-session",
+        g_signal_new (SEAT_SIGNAL_RUNNING_USER_SESSION,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (SeatClass, running_user_session),
@@ -1853,7 +1906,7 @@ seat_class_init (SeatClass *klass)
                       NULL,
                       G_TYPE_NONE, 1, SESSION_TYPE);
     signals[SESSION_REMOVED] =
-        g_signal_new ("session-removed",
+        g_signal_new (SEAT_SIGNAL_SESSION_REMOVED,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (SeatClass, session_removed),
@@ -1861,7 +1914,7 @@ seat_class_init (SeatClass *klass)
                       NULL,
                       G_TYPE_NONE, 1, SESSION_TYPE);
     signals[STOPPED] =
-        g_signal_new ("stopped",
+        g_signal_new (SEAT_SIGNAL_STOPPED,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (SeatClass, stopped),

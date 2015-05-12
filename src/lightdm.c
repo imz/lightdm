@@ -147,32 +147,54 @@ log_init (void)
     g_free (path);
 }
 
-static void
-set_seat_properties (Seat *seat, const gchar *config_section)
+static GList*
+get_config_sections (const gchar *seat_name)
 {
+    gchar **groups, **i;
+    GList *config_sections = NULL;
+
+    config_sections = g_list_append (config_sections, g_strdup ("SeatDefaults"));
+
+    if (!seat_name)
+        return config_sections;
+
+    groups = config_get_groups (config_get_instance ());
+    for (i = groups; *i; i++)
+    {
+        if (g_str_has_prefix (*i, "Seat:"))
+        {
+            const gchar *seat_name_glob = *i + strlen ("Seat:");
+            if (g_pattern_match_simple (seat_name_glob, seat_name))
+                config_sections = g_list_append (config_sections, g_strdup (*i));
+        }
+    }
+    g_strfreev (groups);
+
+    return config_sections;
+}
+
+static void
+set_seat_properties (Seat *seat, const gchar *seat_name)
+{
+    GList *sections, *link;
     gchar **keys;
     gint i;
 
-    keys = config_get_keys (config_get_instance (), "SeatDefaults");
-    for (i = 0; keys && keys[i]; i++)
+    sections = get_config_sections (seat_name);
+    for (link = sections; link; link = link->next)
     {
-        gchar *value = config_get_string (config_get_instance (), "SeatDefaults", keys[i]);
-        seat_set_property (seat, keys[i], value);
-        g_free (value);
-    }
-    g_strfreev (keys);
-
-    if (config_section)
-    {
-        keys = config_get_keys (config_get_instance (), config_section);
+        const gchar *section = link->data;
+        g_debug ("Loading properties from config section %s", section);
+        keys = config_get_keys (config_get_instance (), section);
         for (i = 0; keys && keys[i]; i++)
         {
-            gchar *value = config_get_string (config_get_instance (), config_section, keys[i]);
+            gchar *value = config_get_string (config_get_instance (), section, keys[i]);
             seat_set_property (seat, keys[i], value);
             g_free (value);
         }
         g_strfreev (keys);
     }
+    g_list_free_full (sections, g_free);
 }
 
 static void
@@ -223,11 +245,7 @@ display_manager_seat_removed_cb (DisplayManager *display_manager, Seat *seat)
 
     if (next_seat)
     {
-        gchar *config_section;
-
-        config_section = g_strdup_printf ("Seat:%s", seat_get_name (seat));
-        set_seat_properties (next_seat, config_section);
-        g_free (config_section);
+        set_seat_properties (next_seat, seat_get_name (seat));
 
         // We set this manually on default seat.  Let's port it over if needed.
         if (seat_get_boolean_property (seat, "exit-on-failure"))
@@ -593,11 +611,6 @@ seat_bus_entry_free (gpointer data)
 {
     SeatBusEntry *entry = data;
 
-    g_dbus_connection_unregister_object (bus, entry->bus_id);
-
-    emit_object_value_changed (bus, "/org/freedesktop/DisplayManager", "org.freedesktop.DisplayManager", "Seats", get_seat_list ());
-    emit_object_signal (bus, "/org/freedesktop/DisplayManager", "SeatRemoved", entry->path);
-
     g_free (entry->path);
     g_free (entry);
 }
@@ -606,14 +619,6 @@ static void
 session_bus_entry_free (gpointer data)
 {
     SessionBusEntry *entry = data;
-
-    g_dbus_connection_unregister_object (bus, entry->bus_id);
-
-    emit_object_value_changed (bus, "/org/freedesktop/DisplayManager", "org.freedesktop.DisplayManager", "Sessions", get_session_list (NULL));
-    emit_object_signal (bus, "/org/freedesktop/DisplayManager", "SessionRemoved", entry->path);
-
-    emit_object_value_changed (bus, entry->seat_path, "org.freedesktop.DisplayManager.Seat", "Sessions", get_session_list (entry->seat_path));
-    emit_object_signal (bus, entry->seat_path, "SessionRemoved", entry->path);
 
     g_free (entry->path);
     g_free (entry->seat_path);
@@ -641,7 +646,6 @@ running_user_session_cb (Seat *seat, Session *session)
     session_set_env (session, "XDG_SESSION_PATH", path);
     g_object_set_data_full (G_OBJECT (session), "XDG_SESSION_PATH", path, g_free);
 
-    seat_entry = g_hash_table_lookup (seat_bus_entries, seat);
     session_entry = session_bus_entry_new (g_object_get_data (G_OBJECT (session), "XDG_SESSION_PATH"), seat_entry ? seat_entry->path : NULL);
     g_hash_table_insert (session_bus_entries, g_object_ref (session), session_entry);
 
@@ -667,8 +671,28 @@ running_user_session_cb (Seat *seat, Session *session)
 static void
 session_removed_cb (Seat *seat, Session *session)
 {
+    SessionBusEntry *entry;
+    gchar *seat_path = NULL;
+
     g_signal_handlers_disconnect_matched (session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, seat);
+
+    entry = g_hash_table_lookup (session_bus_entries, session);
+    if (entry)
+    {
+        g_dbus_connection_unregister_object (bus, entry->bus_id);
+        emit_object_signal (bus, "/org/freedesktop/DisplayManager", "SessionRemoved", entry->path);
+        emit_object_signal (bus, entry->seat_path, "SessionRemoved", entry->path);
+        seat_path = g_strdup (entry->seat_path);
+    }
+
     g_hash_table_remove (session_bus_entries, session);
+
+    if (seat_path)
+    {
+        emit_object_value_changed (bus, "/org/freedesktop/DisplayManager", "org.freedesktop.DisplayManager", "Sessions", get_session_list (NULL));
+        emit_object_value_changed (bus, seat_path, "org.freedesktop.DisplayManager.Seat", "Sessions", get_session_list (seat_path));
+        g_free (seat_path);
+    }
 }
 
 static void
@@ -705,14 +729,25 @@ seat_added_cb (DisplayManager *display_manager, Seat *seat)
     emit_object_value_changed (bus, "/org/freedesktop/DisplayManager", "org.freedesktop.DisplayManager", "Seats", get_seat_list ());
     emit_object_signal (bus, "/org/freedesktop/DisplayManager", "SeatAdded", entry->path);
 
-    g_signal_connect (seat, "running-user-session", G_CALLBACK (running_user_session_cb), NULL);
-    g_signal_connect (seat, "session-removed", G_CALLBACK (session_removed_cb), NULL);
+    g_signal_connect (seat, SEAT_SIGNAL_RUNNING_USER_SESSION, G_CALLBACK (running_user_session_cb), NULL);
+    g_signal_connect (seat, SEAT_SIGNAL_SESSION_REMOVED, G_CALLBACK (session_removed_cb), NULL);
 }
 
 static void
 seat_removed_cb (DisplayManager *display_manager, Seat *seat)
 {
+    SeatBusEntry *entry;
+
+    entry = g_hash_table_lookup (seat_bus_entries, seat);
+    if (entry)
+    {
+        g_dbus_connection_unregister_object (bus, entry->bus_id);
+        emit_object_signal (bus, "/org/freedesktop/DisplayManager", "SeatRemoved", entry->path);
+    }
+
     g_hash_table_remove (seat_bus_entries, seat);
+  
+    emit_object_value_changed (bus, "/org/freedesktop/DisplayManager", "org.freedesktop.DisplayManager", "Seats", get_seat_list ());
 }
 
 static gboolean
@@ -838,8 +873,8 @@ bus_acquired_cb (GDBusConnection *connection,
     seat_bus_entries = g_hash_table_new_full (g_direct_hash, g_direct_equal, g_object_unref, seat_bus_entry_free);
     session_bus_entries = g_hash_table_new_full (g_direct_hash, g_direct_equal, g_object_unref, session_bus_entry_free);
 
-    g_signal_connect (display_manager, "seat-added", G_CALLBACK (seat_added_cb), NULL);
-    g_signal_connect (display_manager, "seat-removed", G_CALLBACK (seat_removed_cb), NULL);
+    g_signal_connect (display_manager, DISPLAY_MANAGER_SIGNAL_SEAT_ADDED, G_CALLBACK (seat_added_cb), NULL);
+    g_signal_connect (display_manager, DISPLAY_MANAGER_SIGNAL_SEAT_REMOVED, G_CALLBACK (seat_removed_cb), NULL);
     for (link = display_manager_get_seats (display_manager); link; link = link->next)
         seat_added_cb (display_manager, (Seat *) link->data);
 
@@ -858,7 +893,7 @@ bus_acquired_cb (GDBusConnection *connection,
             if (port > 0)
                 xdmcp_server_set_port (xdmcp_server, port);
         }
-        g_signal_connect (xdmcp_server, "new-session", G_CALLBACK (xdmcp_session_cb), NULL);
+        g_signal_connect (xdmcp_server, XDMCP_SERVER_SIGNAL_NEW_SESSION, G_CALLBACK (xdmcp_session_cb), NULL);
 
         key_name = config_get_string (config_get_instance (), "XDMCPServer", "key");
         if (key_name)
@@ -911,7 +946,7 @@ bus_acquired_cb (GDBusConnection *connection,
                 if (port > 0)
                     vnc_server_set_port (vnc_server, port);
             }
-            g_signal_connect (vnc_server, "new-connection", G_CALLBACK (vnc_connection_cb), NULL);
+            g_signal_connect (vnc_server, VNC_SERVER_SIGNAL_NEW_CONNECTION, G_CALLBACK (vnc_connection_cb), NULL);
 
             g_debug ("Starting VNC server on TCP/IP port %d", vnc_server_get_port (vnc_server));
             vnc_server_start (vnc_server);
@@ -940,42 +975,31 @@ static gboolean
 add_login1_seat (Login1Seat *login1_seat)
 {
     const gchar *seat_name = login1_seat_get_id (login1_seat);
-    gchar **groups, **i;
-    gchar *config_section = NULL;
     gchar **types = NULL, **type;
+    GList *config_sections = NULL, *link;
     Seat *seat = NULL;
     gboolean is_seat0, started = FALSE;
 
     g_debug ("New seat added from logind: %s", seat_name);
     is_seat0 = strcmp (seat_name, "seat0") == 0;
 
-    groups = config_get_groups (config_get_instance ());
-    for (i = groups; !config_section && *i; i++)
+    config_sections = get_config_sections (seat_name);
+    for (link = g_list_last (config_sections); link; link = link->prev)
     {
-        if (g_str_has_prefix (*i, "Seat:") &&
-            g_str_has_suffix (*i, seat_name))
-        {
-            config_section = g_strdup (*i);
-            break;
-        }
-    }
-    g_strfreev (groups);
-
-    if (config_section)
-    {
-        g_debug ("Loading properties from config section %s", config_section);
+        gchar *config_section = link->data;
         types = config_get_string_list (config_get_instance (), config_section, "type");
+        if (types)
+            break;
     }
+    g_list_free_full (config_sections, g_free);
 
-    if (!types)
-        types = config_get_string_list (config_get_instance (), "SeatDefaults", "type");
     for (type = types; !seat && type && *type; type++)
         seat = seat_new (*type, seat_name);
     g_strfreev (types);
 
     if (seat)
     {
-        set_seat_properties (seat, NULL);
+        set_seat_properties (seat, seat_name);
 
         if (!login1_seat_get_can_multi_session (login1_seat))
         {
@@ -983,9 +1007,6 @@ add_login1_seat (Login1Seat *login1_seat)
             /* XXX: uncomment this line after bug #1371250 is closed.
             seat_set_property (seat, "allow-user-switching", "false"); */
         }
-
-        if (config_section)
-            set_seat_properties (seat, config_section);
 
         if (is_seat0)
             seat_set_property (seat, "exit-on-failure", "true");
@@ -1000,7 +1021,6 @@ add_login1_seat (Login1Seat *login1_seat)
             g_debug ("Failed to start seat: %s", seat_name);
     }
 
-    g_free (config_section);
     g_object_unref (seat);
 
     return started;
@@ -1036,7 +1056,7 @@ update_login1_seat (Login1Seat *login1_seat)
         if (seat)
         {
             if (seat_get_is_stopping (seat))
-                g_signal_connect (seat, "stopped", G_CALLBACK (seat_stopped_cb), login1_seat);
+                g_signal_connect (seat, SEAT_SIGNAL_STOPPED, G_CALLBACK (seat_stopped_cb), login1_seat);
             return TRUE;
         }
 
@@ -1057,6 +1077,48 @@ login1_can_graphical_changed_cb (Login1Seat *login1_seat)
 }
 
 static void
+login1_active_session_changed_cb (Login1Seat *login1_seat, const gchar *login1_session_id)
+{
+    g_debug ("Seat %s changes active session to %s", login1_seat_get_id (login1_seat), login1_session_id);
+
+    Seat *seat;
+    seat = display_manager_get_seat (display_manager, login1_seat_get_id (login1_seat));
+
+    if (seat)
+    {
+        Session *active_session;
+        active_session = seat_get_expected_active_session (seat);
+
+        if (g_strcmp0 (login1_session_id, session_get_login1_session_id (active_session)) == 0)
+        {
+            // Session is already active
+            g_debug ("Session %s is already active", login1_session_id);
+            return;
+        }
+
+        active_session = seat_find_session_by_login1_id (seat, login1_session_id);
+        if (active_session != NULL)
+        {
+            g_debug ("Activating session %s", login1_session_id);
+            seat_set_externally_activated_session (seat, active_session);
+            return;
+
+        }
+    }
+}
+
+static gboolean
+login1_add_seat (Login1Seat *login1_seat)
+{
+    if (config_get_boolean (config_get_instance (), "LightDM", "logind-check-graphical"))
+        g_signal_connect (login1_seat, "can-graphical-changed", G_CALLBACK (login1_can_graphical_changed_cb), NULL);
+
+    g_signal_connect (login1_seat, LOGIN1_SIGNAL_ACTIVE_SESION_CHANGED, G_CALLBACK (login1_active_session_changed_cb), NULL);
+
+    return update_login1_seat (login1_seat);
+}
+
+static void
 login1_service_seat_added_cb (Login1Service *service, Login1Seat *login1_seat)
 {
     if (login1_seat_get_can_graphical (login1_seat))
@@ -1064,9 +1126,7 @@ login1_service_seat_added_cb (Login1Service *service, Login1Seat *login1_seat)
     else
         g_debug ("Seat %s added from logind without graphical output", login1_seat_get_id (login1_seat));
 
-    if (config_get_boolean (config_get_instance (), "LightDM", "logind-check-graphical"))
-        g_signal_connect (login1_seat, "can-graphical-changed", G_CALLBACK (login1_can_graphical_changed_cb), NULL);
-    update_login1_seat (login1_seat);
+    login1_add_seat (login1_seat);
 }
 
 static void
@@ -1074,6 +1134,7 @@ login1_service_seat_removed_cb (Login1Service *service, Login1Seat *login1_seat)
 {
     g_debug ("Seat %s removed from logind", login1_seat_get_id (login1_seat));
     g_signal_handlers_disconnect_matched (login1_seat, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, login1_can_graphical_changed_cb, NULL);
+    g_signal_handlers_disconnect_matched (login1_seat, G_SIGNAL_MATCH_FUNC, 0, 0, NULL, login1_active_session_changed_cb, NULL);
     remove_login1_seat (login1_seat);
 }
 
@@ -1138,7 +1199,7 @@ main (int argc, char **argv)
 
     messages = g_list_append (messages, g_strdup_printf ("Starting Light Display Manager %s, UID=%i PID=%i", VERSION, getuid (), getpid ()));
 
-    g_signal_connect (process_get_current (), "got-signal", G_CALLBACK (signal_cb), NULL);
+    g_signal_connect (process_get_current (), PROCESS_SIGNAL_GOT_SIGNAL, G_CALLBACK (signal_cb), NULL);
 
     option_context = g_option_context_new (/* Arguments and description for --help test */
                                            _("- Display Manager"));
@@ -1404,8 +1465,8 @@ main (int argc, char **argv)
         g_debug ("Using Xephyr for X servers");
 
     display_manager = display_manager_new ();
-    g_signal_connect (display_manager, "stopped", G_CALLBACK (display_manager_stopped_cb), NULL);
-    g_signal_connect (display_manager, "seat-removed", G_CALLBACK (display_manager_seat_removed_cb), NULL);
+    g_signal_connect (display_manager, DISPLAY_MANAGER_SIGNAL_STOPPED, G_CALLBACK (display_manager_stopped_cb), NULL);
+    g_signal_connect (display_manager, DISPLAY_MANAGER_SIGNAL_SEAT_REMOVED, G_CALLBACK (display_manager_seat_removed_cb), NULL);
 
     shared_data_manager_start (shared_data_manager_get_instance ());
 
@@ -1417,15 +1478,13 @@ main (int argc, char **argv)
 
         if (config_get_boolean (config_get_instance (), "LightDM", "start-default-seat"))
         {
-            g_signal_connect (login1_service_get_instance (), "seat-added", G_CALLBACK (login1_service_seat_added_cb), NULL);
-            g_signal_connect (login1_service_get_instance (), "seat-removed", G_CALLBACK (login1_service_seat_removed_cb), NULL);
+            g_signal_connect (login1_service_get_instance (), LOGIN1_SERVICE_SIGNAL_SEAT_ADDED, G_CALLBACK (login1_service_seat_added_cb), NULL);
+            g_signal_connect (login1_service_get_instance (), LOGIN1_SERVICE_SIGNAL_SEAT_REMOVED, G_CALLBACK (login1_service_seat_removed_cb), NULL);
 
             for (link = login1_service_get_seats (login1_service_get_instance ()); link; link = link->next)
             {
                 Login1Seat *login1_seat = link->data;
-                if (config_get_boolean (config_get_instance (), "LightDM", "logind-check-graphical"))
-                    g_signal_connect (login1_seat, "can-graphical-changed", G_CALLBACK (login1_can_graphical_changed_cb), NULL);
-                if (!update_login1_seat (login1_seat))
+                if (!login1_add_seat (login1_seat))
                     return EXIT_FAILURE;
             }
         }

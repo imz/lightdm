@@ -269,6 +269,7 @@ xdmcp_client_start (XDMCPClient *client)
     client->priv->socket = g_socket_new (G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM, G_SOCKET_PROTOCOL_UDP, &error);
     if (error)
         g_warning ("Error creating XDMCP socket: %s", error->message);
+    g_clear_error (&error);
     if (!client->priv->socket)
         return FALSE;
 
@@ -438,7 +439,7 @@ xdmcp_client_class_init (XDMCPClientClass *klass)
     object_class->finalize = xdmcp_client_finalize;
     g_type_class_add_private (klass, sizeof (XDMCPClientPrivate));
     xdmcp_client_signals[XDMCP_CLIENT_QUERY] =
-        g_signal_new ("query",
+        g_signal_new (XDMCP_CLIENT_SIGNAL_QUERY,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (XDMCPClientClass, query),
@@ -446,7 +447,7 @@ xdmcp_client_class_init (XDMCPClientClass *klass)
                       NULL,
                       G_TYPE_NONE, 0);
     xdmcp_client_signals[XDMCP_CLIENT_WILLING] =
-        g_signal_new ("willing",
+        g_signal_new (XDMCP_CLIENT_SIGNAL_WILLING,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (XDMCPClientClass, willing),
@@ -454,7 +455,7 @@ xdmcp_client_class_init (XDMCPClientClass *klass)
                       NULL,
                       G_TYPE_NONE, 1, G_TYPE_POINTER);
     xdmcp_client_signals[XDMCP_CLIENT_ACCEPT] =
-        g_signal_new ("accept",
+        g_signal_new (XDMCP_CLIENT_SIGNAL_ACCEPT,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (XDMCPClientClass, accept),
@@ -462,7 +463,7 @@ xdmcp_client_class_init (XDMCPClientClass *klass)
                       NULL,
                       G_TYPE_NONE, 1, G_TYPE_POINTER);
     xdmcp_client_signals[XDMCP_CLIENT_DECLINE] =
-        g_signal_new ("decline",
+        g_signal_new (XDMCP_CLIENT_SIGNAL_DECLINE,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (XDMCPClientClass, decline),
@@ -470,7 +471,7 @@ xdmcp_client_class_init (XDMCPClientClass *klass)
                       NULL,
                       G_TYPE_NONE, 1, G_TYPE_POINTER);
     xdmcp_client_signals[XDMCP_CLIENT_FAILED] =
-        g_signal_new ("failed",
+        g_signal_new (XDMCP_CLIENT_SIGNAL_FAILED,
                       G_TYPE_FROM_CLASS (klass),
                       G_SIGNAL_RUN_LAST,
                       G_STRUCT_OFFSET (XDMCPClientClass, failed),

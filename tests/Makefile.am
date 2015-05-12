@@ -56,6 +56,7 @@ TESTS = \
 	test-login-guest-session-config \
 	test-group-membership \
 	test-xdg-current-desktop \
+	test-xdg-current-desktop-legacy \
 	test-language-env \
 	test-session-stdout \
 	test-session-stderr \
@@ -128,6 +129,7 @@ TESTS = \
 	test-upstart-login \
 	test-dbus \
 	test-lock-seat \
+	test-lock-seat-after-vt-switch \
 	test-lock-seat-resettable \
 	test-lock-seat-return-session \
 	test-lock-session \
@@ -162,10 +164,12 @@ TESTS = \
 	test-vnc-command \
 	test-vnc-dimensions \
 	test-vnc-open-file-descriptors \
+	test-vnc-guest \
 	test-xdmcp-client \
 	test-xdmcp-server-autologin \
 	test-xdmcp-server-login \
 	test-xdmcp-server-double-login \
+	test-xdmcp-server-guest \
 	test-utmp-login \
 	test-utmp-autologin \
 	test-utmp-wrong-password \
@@ -187,6 +191,7 @@ TESTS = \
 	test-multi-seat-non-graphical-disabled \
 	test-multi-seat-change-graphical \
 	test-multi-seat-change-graphical-disabled \
+	test-multi-seat-globbing-config-sections \
 	test-mir-autologin \
 	test-mir-greeter \
 	test-mir-session \
@@ -346,6 +351,7 @@ EXTRA_DIST = \
 	data/sessions/mir.desktop \
 	data/sessions/mir-container.desktop \
 	data/sessions/named.desktop \
+	data/sessions/named-legacy.desktop \
 	scripts/0-additional.conf \
 	scripts/1-additional.conf \
 	scripts/additional-config.conf \
@@ -405,6 +411,7 @@ EXTRA_DIST = \
 	scripts/language-env.conf \
 	scripts/language-no-accounts-service.conf \
 	scripts/lock-seat.conf \
+	scripts/lock-seat-after-vt-switch.conf \
 	scripts/lock-seat-console-kit.conf \    
 	scripts/lock-seat-resettable.conf \
 	scripts/lock-seat-return-session.conf \
@@ -460,6 +467,7 @@ EXTRA_DIST = \
 	scripts/multi-seat-non-graphical-disabled.conf \
 	scripts/multi-seat-seat0-non-graphical.conf \
 	scripts/multi-seat-seat0-non-graphical-disabled.conf \
+	scripts/multi-seat-globbing-config-sections.conf \
 	scripts/no-accounts-service.conf \
 	scripts/no-config.conf \
 	scripts/no-console-kit.conf \
@@ -551,13 +559,16 @@ EXTRA_DIST = \
 	scripts/utmp-wrong-password.conf \
 	scripts/vnc-command.conf \
 	scripts/vnc-dimensions.conf \
+	scripts/vnc-guest.conf \
 	scripts/vnc-login.conf \
 	scripts/vnc-open-file-descriptors.conf \
 	scripts/xauthority.conf \
 	scripts/xdg-current-desktop.conf \
+	scripts/xdg-current-desktop-legacy.conf \
 	scripts/xdmcp-client.conf \
 	scripts/xdmcp-server-autologin.conf \
 	scripts/xdmcp-server-double-login.conf \
+	scripts/xdmcp-server-guest.conf \
 	scripts/xdmcp-server-login.conf \
 	scripts/xdmcp-server-open-file-descriptors.conf \
 	scripts/xserver-fail-start.conf \

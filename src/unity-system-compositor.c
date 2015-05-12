@@ -85,6 +85,8 @@ void
 unity_system_compositor_set_command (UnitySystemCompositor *compositor, const gchar *command)
 {
     g_return_if_fail (compositor != NULL);
+    g_return_if_fail (command != NULL);
+
     g_free (compositor->priv->command);
     compositor->priv->command = g_strdup (command);
 }
@@ -145,7 +147,8 @@ write_message (UnitySystemCompositor *compositor, guint16 id, const guint8 *payl
     data[1] = id & 0xFF;
     data[2] = payload_length >> 8;
     data[3] = payload_length & 0xFF;
-    memcpy (data + 4, payload, payload_length);
+    if (payload)
+        memcpy (data + 4, payload, payload_length);
 
     errno = 0;
     if (write (compositor->priv->to_compositor_pipe[1], data, data_length) != data_length)
@@ -438,7 +441,7 @@ unity_system_compositor_start (DisplayServer *server)
     g_string_free (command, TRUE);
 
     /* Start the compositor */
-    g_signal_connect (compositor->priv->process, "stopped", G_CALLBACK (stopped_cb), compositor);
+    g_signal_connect (compositor->priv->process, PROCESS_SIGNAL_STOPPED, G_CALLBACK (stopped_cb), compositor);
     result = process_start (compositor->priv->process, FALSE);
 
     /* Close compostor ends of the pipes */

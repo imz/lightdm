@@ -26,6 +26,11 @@ G_BEGIN_DECLS
 #define SEAT_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST ((klass), SEAT_TYPE, SeatClass))
 #define SEAT_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), SEAT_TYPE, SeatClass))
 
+#define SEAT_SIGNAL_SESSION_ADDED        "session-added"
+#define SEAT_SIGNAL_RUNNING_USER_SESSION "running-user-session"
+#define SEAT_SIGNAL_SESSION_REMOVED      "session-removed"
+#define SEAT_SIGNAL_STOPPED              "stopped"
+
 typedef struct SeatPrivate SeatPrivate;
 
 typedef struct
@@ -87,6 +92,12 @@ void seat_set_active_session (Seat *seat, Session *session);
 Session *seat_get_active_session (Seat *seat);
 
 Session *seat_get_next_session (Seat *seat);
+
+void seat_set_externally_activated_session (Seat *seat, Session *session);
+
+Session *seat_get_expected_active_session (Seat *seat);
+
+Session *seat_find_session_by_login1_id (Seat *seat, const gchar *login1_session_id);
 
 gboolean seat_get_can_switch (Seat *seat);
 
