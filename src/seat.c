@@ -144,7 +144,19 @@ seat_get_string_list_property (Seat *seat, const gchar *name)
 gboolean
 seat_get_boolean_property (Seat *seat, const gchar *name)
 {
-    return g_strcmp0 (seat_get_string_property (seat, name), "true") == 0;
+    const gchar *value;
+    gint i, length = 0;
+
+    value = seat_get_string_property (seat, name);
+    if (!value)
+        return FALSE;
+
+    /* Count the number of non-whitespace characters */
+    for (i = 0; value[i]; i++)
+        if (!g_ascii_isspace (value[i]))
+            length = i + 1;
+
+    return strncmp (value, "true", MAX (length, 4)) == 0;
 }
 
 gint
@@ -397,13 +409,15 @@ emit_upstart_signal (const gchar *signal)
 {
     g_return_if_fail (signal != NULL);
     g_return_if_fail (signal[0] != 0);
+    const gchar* argv[] = {"initctl", "-q", "emit", signal, "DISPLAY_MANAGER=lightdm", NULL};
 
     if (getuid () != 0)
         return;
 
-    gchar *cmd = g_strdup_printf ("initctl -q emit %s DISPLAY_MANAGER=lightdm", signal);
-    g_spawn_command_line_async (cmd, NULL); /* OK if it fails, probably not installed */
-    g_free (cmd);
+    /* OK if it fails, probably not installed or not running upstart */
+    g_spawn_async (NULL, argv, NULL,
+            G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
+            NULL, NULL, NULL, NULL);
 }
 
 static void
@@ -599,13 +613,15 @@ start_session (Seat *seat, Session *session)
     if (IS_GREETER (session))
     {
         gchar *log_dir, *filename, *log_filename;
+        gboolean backup_logs;
 
         log_dir = config_get_string (config_get_instance (), "LightDM", "log-directory");
         filename = g_strdup_printf ("%s-greeter.log", display_server_get_name (session_get_display_server (session)));
         log_filename = g_build_filename (log_dir, filename, NULL);
         g_free (log_dir);
         g_free (filename);
-        session_set_log_file (session, log_filename);
+        backup_logs = config_get_boolean (config_get_instance (), "LightDM", "backup-logs");
+        session_set_log_file (session, log_filename, backup_logs ? LOG_MODE_BACKUP_AND_TRUNCATE : LOG_MODE_APPEND);
         g_free (log_filename);
     }
 
@@ -963,11 +979,15 @@ find_session_config (Seat *seat, const gchar *sessions_dir, const gchar *session
     for (i = 0; dirs[i]; i++)
     {
         gchar *filename, *path;
+        const gchar *default_session_type = "x";
+
+        if (strcmp (dirs[i], WAYLAND_SESSIONS_DIR) == 0)
+            default_session_type = "wayland";
 
         filename = g_strdup_printf ("%s.desktop", session_name);
         path = g_build_filename (dirs[i], filename, NULL);
         g_free (filename);
-        session_config = session_config_new_from_file (path, &error);
+        session_config = session_config_new_from_file (path, default_session_type, &error);
         g_free (path);
         if (session_config)
             break;
@@ -1025,6 +1045,14 @@ create_user_session (Seat *seat, const gchar *username, gboolean autostart)
     }
     session_name = user_get_xsession (user);
     language = user_get_language (user);
+
+    /* Override session for autologin if configured */
+    if (autostart)
+    {
+        const gchar *autologin_session_name = seat_get_string_property (seat, "autologin-session");
+        if (autologin_session_name)
+            session_name = autologin_session_name;
+    }
 
     if (!session_name)
         session_name = seat_get_string_property (seat, "user-session");

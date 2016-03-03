@@ -18,8 +18,24 @@ static int exit_status = EXIT_SUCCESS;
 
 static GKeyFile *config;
 
+/* Version to pretend to be */
+static gchar *xorg_version;
+static gint xorg_version_major, xorg_version_minor;
+
 /* Path to lock file */
 static gchar *lock_path = NULL;
+
+/* TRUE if we allow TCP connections */
+static gboolean listen_tcp = TRUE;
+
+/* TRUE if we allow Unix connections */
+static gboolean listen_unix = TRUE;
+
+/* Configuration to use */
+static gchar *config_file = NULL;
+
+/* Configuration layout to use */
+static gchar *layout = NULL;
 
 /* Path to authority database to use */
 static gchar *auth_path = NULL;
@@ -38,6 +54,9 @@ static XServer *xserver = NULL;
 
 /* XDMCP client */
 static XDMCPClient *xdmcp_client = NULL;
+
+/* Session ID provided by XDMCP server */
+static guint32 xdmcp_session_id = 0;
 
 /* Authorization provided by XDMCP server */
 static guint16 xdmcp_cookie_length = 0;
@@ -85,65 +104,75 @@ sigterm_cb (gpointer user_data)
 }
 
 static void
-xdmcp_query_cb (XDMCPClient *client)
+xdmcp_willing_cb (XDMCPClient *client, XDMCPWilling *message)
 {
-    static gboolean notified_query = FALSE;
-
-    if (!notified_query)
-    {
-        status_notify ("%s SEND-QUERY", id);
-        notified_query = TRUE;
-    }
+    status_notify ("%s GOT-WILLING AUTHENTICATION-NAME=\"%s\" HOSTNAME=\"%s\" STATUS=\"%s\"", id, message->authentication_name, message->hostname, message->status);
 }
 
 static void
-xdmcp_willing_cb (XDMCPClient *client, XDMCPWilling *message)
+xdmcp_unwilling_cb (XDMCPClient *client, XDMCPUnwilling *message)
 {
-    gchar **authorization_names;
-    GInetAddress *addresses[2];
+    status_notify ("%s GOT-UNWILLING HOSTNAME=\"%s\" STATUS=\"%s\"", id, message->hostname, message->status);
+}
 
-    status_notify ("%s GOT-WILLING AUTHENTICATION-NAME=\"%s\" HOSTNAME=\"%s\" STATUS=\"%s\"", id, message->authentication_name, message->hostname, message->status);
+static gchar *
+data_to_string (guint8 *data, gsize data_length)
+{
+    static gchar hex_char[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+    gchar *text;
+    gsize i;
 
-    status_notify ("%s SEND-REQUEST DISPLAY-NUMBER=%d AUTHORIZATION-NAME=\"%s\" MFID=\"%s\"", id, display_number, "MIT-MAGIC-COOKIE-1", "TEST XSERVER");
+    text = malloc (data_length * 2 + 1);
+    for (i = 0; i < data_length; i++)
+    {
+        text[i*2] = hex_char [data[i] >> 4];
+        text[i*2 + 1] = hex_char [data[i] & 0xF];
+    }
+    text[i*2] = '\0';
 
-    authorization_names = g_strsplit ("MIT-MAGIC-COOKIE-1", " ", -1);
-    addresses[0] = xdmcp_client_get_local_address (client);
-    addresses[1] = NULL;
-    xdmcp_client_send_request (client, display_number,
-                               addresses,
-                               "", NULL, 0,
-                               authorization_names, "TEST XSERVER");
-    g_strfreev (authorization_names);
+    return text;
 }
 
 static void
 xdmcp_accept_cb (XDMCPClient *client, XDMCPAccept *message)
 {
-    status_notify ("%s GOT-ACCEPT SESSION-ID=%d AUTHENTICATION-NAME=\"%s\" AUTHORIZATION-NAME=\"%s\"", id, message->session_id, message->authentication_name, message->authorization_name);
+    gchar *authentication_data_text, *authorization_data_text;
 
-    /* Ignore if haven't picked a valid authorization */
-    if (strcmp (message->authorization_name, "MIT-MAGIC-COOKIE-1") != 0)
-        return;
+    authentication_data_text = data_to_string (message->authentication_data, message->authentication_data_length);
+    authorization_data_text = data_to_string (message->authorization_data, message->authorization_data_length);
+    status_notify ("%s GOT-ACCEPT SESSION-ID=%d AUTHENTICATION-NAME=\"%s\" AUTHENTICATION-DATA=%s AUTHORIZATION-NAME=\"%s\" AUTHORIZATION-DATA=%s",
+                   id, message->session_id, message->authentication_name, authentication_data_text, message->authorization_name, authorization_data_text);
+    g_free (authentication_data_text);
+    g_free (authorization_data_text);  
+
+    xdmcp_session_id = message->session_id;
 
     g_free (xdmcp_cookie);
     xdmcp_cookie_length = message->authorization_data_length;
     xdmcp_cookie = g_malloc (message->authorization_data_length);
     memcpy (xdmcp_cookie, message->authorization_data, message->authorization_data_length);
-
-    status_notify ("%s SEND-MANAGE SESSION-ID=%d DISPLAY-NUMBER=%d DISPLAY-CLASS=\"%s\"", id, message->session_id, display_number, "DISPLAY CLASS");
-    xdmcp_client_send_manage (client, message->session_id, display_number, "DISPLAY CLASS");
 }
 
 static void
 xdmcp_decline_cb (XDMCPClient *client, XDMCPDecline *message)
 {
-    status_notify ("%s GOT-DECLINE STATUS=\"%s\" AUTHENTICATION-NAME=\"%s\"", id, message->status, message->authentication_name);
+    gchar *authentication_data_text;
+
+    authentication_data_text = data_to_string (message->authentication_data, message->authentication_data_length);
+    status_notify ("%s GOT-DECLINE STATUS=\"%s\" AUTHENTICATION-NAME=\"%s\" AUTHENTICATION-DATA=%s", id, message->status, message->authentication_name, authentication_data_text);
+    g_free (authentication_data_text);
 }
 
 static void
 xdmcp_failed_cb (XDMCPClient *client, XDMCPFailed *message)
 {
     status_notify ("%s GOT-FAILED SESSION-ID=%d STATUS=\"%s\"", id, message->session_id, message->status);
+}
+
+static void
+xdmcp_alive_cb (XDMCPClient *client, XDMCPAlive *message)
+{
+    status_notify ("%s GOT-ALIVE SESSION-RUNNING=%s SESSION-ID=%d", id, message->session_running ? "TRUE" : "FALSE", message->session_id);
 }
 
 static void
@@ -157,6 +186,19 @@ static void
 client_disconnected_cb (XServer *server, XClient *client)
 {
     g_signal_handlers_disconnect_matched (client, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, NULL);
+}
+
+static guint8
+get_nibble (char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    else if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    else
+        return 0;
 }
 
 static void
@@ -187,17 +229,170 @@ request_cb (const gchar *name, GHashTable *params)
         signal (SIGUSR1, handler);
     }
 
-    else if (strcmp (name, "START-XDMCP") == 0)
+    else if (strcmp (name, "SEND-QUERY") == 0)
     {
+        const gchar *authentication_names_list;
+        gchar **authentication_names;
+
         if (!xdmcp_client_start (xdmcp_client))
             quit (EXIT_FAILURE);
+
+        authentication_names_list = g_hash_table_lookup (params, "AUTHENTICATION-NAMES");
+        if (!authentication_names_list)
+            authentication_names_list = "";
+        authentication_names = g_strsplit (authentication_names_list, " ", -1);
+
+        xdmcp_client_send_query (xdmcp_client, authentication_names);
+        g_strfreev (authentication_names);
     }
+
+    else if (strcmp (name, "SEND-REQUEST") == 0)
+    {
+        const gchar *text, *addresses_list, *authentication_name, *authentication_data_text, *authorization_names_list, *mfid;
+        int request_display_number = display_number;
+        gchar **list, **authorization_names;
+        guint8 *authentication_data;
+        gsize authentication_data_length, list_length;
+        gint i;
+        GInetAddress **addresses;
+
+        text = g_hash_table_lookup (params, "DISPLAY-NUMBER");
+        if (text)
+            request_display_number = atoi (text);
+        addresses_list = g_hash_table_lookup (params, "ADDRESSES");
+        if (!addresses_list)
+            addresses_list = "";
+        authentication_name = g_hash_table_lookup (params, "AUTHENTICATION-NAME");
+        if (!authentication_name)
+            authentication_name = "";
+        authentication_data_text = g_hash_table_lookup (params, "AUTHENTICATION-DATA");
+        if (!authentication_data_text)
+            authentication_data_text = "";
+        authorization_names_list = g_hash_table_lookup (params, "AUTHORIZATION-NAMES");
+        if (!authorization_names_list)
+            authorization_names_list = "";
+        mfid = g_hash_table_lookup (params, "MFID");
+        if (!mfid)
+            mfid = "";
+
+        list = g_strsplit (addresses_list, " ", -1);
+        list_length = g_strv_length (list);
+        addresses = g_malloc (sizeof (GInetAddress *) * (list_length + 1));
+        for (i = 0; i < list_length; i++)
+            addresses[i] = g_inet_address_new_from_string (list[i]);
+        addresses[i] = NULL;
+        g_strfreev (list);
+
+        authentication_data_length = strlen (authentication_data_text) / 2;
+        authentication_data = malloc (authentication_data_length);
+        for (i = 0; i < authentication_data_length; i++)
+            authentication_data[i] = get_nibble (authentication_data_text[i*2]) << 4 | get_nibble (authentication_data_text[i*2+1]);
+
+        authorization_names = g_strsplit (authorization_names_list, " ", -1);
+
+        xdmcp_client_send_request (xdmcp_client,
+                                   request_display_number,
+                                   addresses,
+                                   authentication_name,
+                                   authentication_data, authentication_data_length,
+                                   authorization_names, mfid);
+        g_free (authentication_data);
+        g_strfreev (authorization_names);
+    }
+
+    else if (strcmp (name, "SEND-MANAGE") == 0)
+    {
+        const char *text, *display_class;
+        guint32 session_id = xdmcp_session_id;
+        guint16 manage_display_number = display_number;
+
+        text = g_hash_table_lookup (params, "SESSION-ID");
+        if (text)
+            session_id = atoi (text);
+        text = g_hash_table_lookup (params, "DISPLAY-NUMBER");
+        if (text)
+            manage_display_number = atoi (text);
+        display_class = g_hash_table_lookup (params, "DISPLAY-CLASS");
+
+        if (!display_class)
+            display_class = "";
+        xdmcp_client_send_manage (xdmcp_client,
+                                  session_id,
+                                  manage_display_number,
+                                  display_class);
+    }
+
+    else if (strcmp (name, "SEND-KEEP-ALIVE") == 0)
+    {
+        const char *text;
+        guint32 session_id = xdmcp_session_id;
+        guint16 keep_alive_display_number = display_number;
+
+        text = g_hash_table_lookup (params, "DISPLAY-NUMBER");
+        if (text)
+            keep_alive_display_number = atoi (text);     
+        text = g_hash_table_lookup (params, "SESSION-ID");
+        if (text)
+            session_id = atoi (text);
+
+        xdmcp_client_send_keep_alive (xdmcp_client, keep_alive_display_number, session_id);
+    }
+
+    else if (strcmp (name, "SEND-REQUEST") == 0)
+    {
+        const gchar *addresses_list, *authorization_names_list, *mfid;
+        gchar **list, **authorization_names;
+        gsize list_length;
+        gint i;
+        GInetAddress **addresses;
+
+        addresses_list = g_hash_table_lookup (params, "ADDRESSES");
+        if (!addresses_list)
+            addresses_list = "";
+        authorization_names_list = g_hash_table_lookup (params, "AUTHORIZATION-NAMES");
+        if (!authorization_names_list)
+            authorization_names_list = "";
+        mfid = g_hash_table_lookup (params, "MFID");
+        if (!mfid)
+            mfid = "";
+
+        list = g_strsplit (addresses_list, " ", -1);
+        list_length = g_strv_length (list);
+        addresses = g_malloc (sizeof (GInetAddress *) * (list_length + 1));
+        for (i = 0; i < list_length; i++)
+            addresses[i] = g_inet_address_new_from_string (list[i]);
+        addresses[i] = NULL;
+        g_strfreev (list);
+
+        authorization_names = g_strsplit (authorization_names_list, " ", -1);
+
+        xdmcp_client_send_request (xdmcp_client, display_number,
+                                   addresses,
+                                   "", NULL, 0,
+                                   authorization_names, mfid);
+        g_strfreev (authorization_names);
+    }
+
+    else if (strcmp (name, "SEND-MANAGE") == 0)
+    {
+        xdmcp_client_send_manage (xdmcp_client, xdmcp_session_id, display_number, "DISPLAY CLASS");
+    }
+}
+
+static int
+version_compare (int major, int minor)
+{
+    if (major == xorg_version_major)
+        return xorg_version_minor - minor;
+    else
+        return xorg_version_major - major;
 }
 
 int
 main (int argc, char **argv)
 {
     int i;
+    gchar **tokens;
     char *pid_string;
     gboolean do_xdmcp = FALSE;
     guint xdmcp_port = 0;
@@ -205,7 +400,6 @@ main (int argc, char **argv)
     gchar *seat = NULL;
     gchar *mir_id = NULL;
     gchar *lock_filename;
-    gboolean sharevts = FALSE;
     int lock_file;
     GString *status_text;
 
@@ -219,6 +413,20 @@ main (int argc, char **argv)
     g_unix_signal_add (SIGTERM, sigterm_cb, NULL);
     g_unix_signal_add (SIGHUP, sighup_cb, NULL);
 
+    config = g_key_file_new ();
+    g_key_file_load_from_file (config, g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "script", NULL), G_KEY_FILE_NONE, NULL);
+
+    xorg_version = g_key_file_get_string (config, "test-xserver-config", "version", NULL);
+    if (!xorg_version)
+        xorg_version = g_strdup ("1.17.0");
+    tokens = g_strsplit (xorg_version, ".", -1);
+    xorg_version_major = g_strv_length (tokens) > 0 ? atoi (tokens[0]) : 0;
+    xorg_version_minor = g_strv_length (tokens) > 1 ? atoi (tokens[1]) : 0;
+    g_strfreev (tokens);
+
+    /* TCP listening default changed in 1.17.0 */
+    listen_tcp = version_compare (1, 17) < 0;
+
     for (i = 1; i < argc; i++)
     {
         char *arg = argv[i];
@@ -227,19 +435,38 @@ main (int argc, char **argv)
         {
             display_number = atoi (arg + 1);
         }
+        else if (strcmp (arg, "-config") == 0)
+        {
+            config_file = argv[i+1];
+            i++;
+        }
+        else if (strcmp (arg, "-layout") == 0)
+        {
+            layout = argv[i+1];
+            i++;
+        }
         else if (strcmp (arg, "-auth") == 0)
         {
             auth_path = argv[i+1];
             i++;
+        }
+        else if (strcmp (arg, "-listen") == 0 && version_compare (1, 17) >= 0)
+        {
+            char *protocol = argv[i+1];
+            i++;
+            if (strcmp (protocol, "tcp") == 0)
+                listen_tcp = TRUE;
+            else if (strcmp (protocol, "unix") == 0)
+                listen_unix = TRUE;
         }
         else if (strcmp (arg, "-nolisten") == 0)
         {
             char *protocol = argv[i+1];
             i++;
             if (strcmp (protocol, "tcp") == 0)
-                ;//listen_tcp = FALSE;
+                listen_tcp = FALSE;
             else if (strcmp (protocol, "unix") == 0)
-                ;//listen_unix = FALSE;
+                listen_unix = FALSE;
         }
         else if (strcmp (arg, "-nr") == 0)
         {
@@ -258,11 +485,13 @@ main (int argc, char **argv)
         {
             do_xdmcp = TRUE;
             xdmcp_host = argv[i+1];
+            listen_tcp = TRUE;
             i++;
         }
         else if (strcmp (arg, "-broadcast") == 0)
         {
             do_xdmcp = TRUE;
+            listen_tcp = TRUE;
         }
         else if (g_str_has_prefix (arg, "vt"))
         {
@@ -277,10 +506,6 @@ main (int argc, char **argv)
             seat = argv[i+1];
             i++;
         }
-        else if (strcmp (arg, "-sharevts") == 0)
-        {
-            sharevts = TRUE;
-        }
         else if (strcmp (arg, "-mir") == 0)
         {
             mir_id = argv[i+1];
@@ -291,21 +516,29 @@ main (int argc, char **argv)
             /* FIXME */
             i++;
         }
+        else if (strcmp (arg, "-version") == 0)
+        {
+            fprintf (stderr, "\nX.Org X Server %s\nBlah blah blah\n", xorg_version);
+            return EXIT_SUCCESS;
+        }
         else
         {
             g_printerr ("Unrecognized option: %s\n"
                         "Use: %s [:<display>] [option]\n"
+                        "-config file           Specify a configuration file\n"
+                        "-layout name           Specify the ServerLayout section name\n"
                         "-auth file             Select authorization file\n"
                         "-nolisten protocol     Don't listen on protocol\n"
+                        "-listen protocol       Listen on protocol\n"
                         "-background [none]     Create root window with no background\n"
                         "-nr                    (Ubuntu-specific) Synonym for -background none\n"
                         "-query host-name       Contact named host for XDMCP\n"
                         "-broadcast             Broadcast for XDMCP\n"
                         "-port port-num         UDP port number to send messages to\n"
                         "-seat string           seat to run on\n"
-                        "-sharevts              share VTs with another X server\n"
                         "-mir id                Mir ID to use\n"
                         "-mirSocket name        Mir socket to use\n"
+                        "-version               show the server version\n"
                         "vtxx                   Use virtual terminal xx instead of the next available\n",
                         arg, argv[0]);
             return EXIT_FAILURE;
@@ -322,19 +555,22 @@ main (int argc, char **argv)
 
     status_text = g_string_new ("");
     g_string_printf (status_text, "%s START", id);
+    if (config_file)
+        g_string_append_printf (status_text, " CONFIG=%s", config_file);
+    if (layout)
+        g_string_append_printf (status_text, " LAYOUT=%s", layout);
     if (vt_number >= 0)
         g_string_append_printf (status_text, " VT=%d", vt_number);
+    if (listen_tcp)
+        g_string_append (status_text, " LISTEN-TCP");
+    if (!listen_unix)
+        g_string_append (status_text, " NO-LISTEN-UNIX");
     if (seat != NULL)
         g_string_append_printf (status_text, " SEAT=%s", seat);
-    if (sharevts)
-        g_string_append (status_text, " SHAREVTS=TRUE");
     if (mir_id != NULL)
         g_string_append_printf (status_text, " MIR-ID=%s", mir_id);
     status_notify ("%s", status_text->str);
     g_string_free (status_text, TRUE);
-
-    config = g_key_file_new ();
-    g_key_file_load_from_file (config, g_build_filename (g_getenv ("LIGHTDM_TEST_ROOT"), "script", NULL), G_KEY_FILE_NONE, NULL);
 
     if (g_key_file_has_key (config, "test-xserver-config", "return-value", NULL))
     {
@@ -415,11 +651,12 @@ main (int argc, char **argv)
             xdmcp_client_set_hostname (xdmcp_client, xdmcp_host);
         if (xdmcp_port > 0)
             xdmcp_client_set_port (xdmcp_client, xdmcp_port);
-        g_signal_connect (xdmcp_client, XDMCP_CLIENT_SIGNAL_QUERY, G_CALLBACK (xdmcp_query_cb), NULL);
         g_signal_connect (xdmcp_client, XDMCP_CLIENT_SIGNAL_WILLING, G_CALLBACK (xdmcp_willing_cb), NULL);
+        g_signal_connect (xdmcp_client, XDMCP_CLIENT_SIGNAL_UNWILLING, G_CALLBACK (xdmcp_unwilling_cb), NULL);      
         g_signal_connect (xdmcp_client, XDMCP_CLIENT_SIGNAL_ACCEPT, G_CALLBACK (xdmcp_accept_cb), NULL);
         g_signal_connect (xdmcp_client, XDMCP_CLIENT_SIGNAL_DECLINE, G_CALLBACK (xdmcp_decline_cb), NULL);
         g_signal_connect (xdmcp_client, XDMCP_CLIENT_SIGNAL_FAILED, G_CALLBACK (xdmcp_failed_cb), NULL);
+        g_signal_connect (xdmcp_client, XDMCP_CLIENT_SIGNAL_ALIVE, G_CALLBACK (xdmcp_alive_cb), NULL);      
     }
 
     g_main_loop_run (loop);

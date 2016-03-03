@@ -1,3 +1,83 @@
+Overview of changes in lightdm 1.16.7
+
+    * Fix dm-tool add-local-seat not working because LightDM is trying to
+      connect with TCP/IP
+
+Overview of changes in lightdm 1.16.6
+
+    * Handle XDMCP Request packet with no addresses.
+    * Don't start LightDM if the XDMCP server is configured with a key that
+      doesn't exist.
+    * Add IP addresses to XDMCP log messages.
+    * Refactor XDMCP error handling.
+    * Add more tests.
+
+Overview of changes in lightdm 1.16.5
+
+    * Handle trailing whitespace on boolean values in configuration.
+    * Add a backup-logs option that can be used to disable existing logging
+      files having a .old suffix added to them.
+    * Add LC_PAPER, LC_NAME, LC_ADDRESS, LC_TELEPHONE, LC_MEASUREMENT and
+      LC_IDENTIFICATION variables to the list of inherited locale variables.
+    * Implement XDMCP ForwardQuery.
+    * Fix small memory leak in XDMCP logging code.
+    * Check the version of the X server we are running so we correctly pass
+      -listen tcp when required.
+
+Overview of changes in lightdm 1.16.4
+
+    * Fix apparmor profiles for running Chromium in guest sessions
+
+Overview of changes in lightdm 1.16.3
+
+    * Fix compile failing without libaudit
+    * Fix compile failing without Vala
+
+Overview of changes in lightdm 1.16.2
+
+    * Fix compile failing without libaudit
+
+Overview of changes in lightdm 1.16.1
+
+    * Use libaudit to generate audit events
+
+Overview of changes in lightdm 1.16.0
+
+    * Update default configuration better explaining the seat configuration name
+      matching and dropping references to the obsolete [SeatDefaults] section    
+
+Overview of changes in lightdm 1.15.3
+
+    * Drop Xorg option -sharevts. It's no longer required for non-seat0 X
+      servers since xorg-server release 1.16.
+
+Overview of changes in lightdm 1.15.2
+
+    * Support Wayland sessions.
+    * Implement autologin-session option.    
+    * Generate Vala bindings from GIR instead of manually writing them. This
+      fixes some small bugs in both the Vala and GIR bindings.
+    * Don't remove autotools generated files in distclean. 
+
+Overview of changes in lightdm 1.15.1
+
+    * Fix default X server command set to XMir in 1.15.0.
+    * Internally merge the [SeatDefaults] and [Seat:*] sections together. The
+      previous method meant configuration snippets using a mix of old and new
+      naming would not correctly override eachother.
+    * Use IP address of XDMCP requests to contact X server if available.
+    * Add an option for XDMCP and VNC servers to only listen on one address.
+    * Fix configuration file warnings so they go to the log, not stderr.
+    * Warn if deprecated options logind-load-seats or xdg-seat are in
+      configuration.
+    * Improve IP addresses in XDMCP log messages.
+    * Fix typo in dm-tool man page.
+
+Overview of changes in lightdm 1.15.0
+
+    * Deprecate [SeatDefaults] in favour of [Seat:*]
+    * Use new Xmir binary when running X under Unity System Compositor
+
 Overview of changes in lightdm 1.14.0
 
     * Initialize file descriptor handles so we don't attempt to close stdin by

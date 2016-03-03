@@ -17,11 +17,16 @@
 #include <utmpx.h>
 #include <sys/mman.h>
 
+#if HAVE_LIBAUDIT
+#include <libaudit.h>
+#endif
+
 #include "configuration.h"
 #include "session-child.h"
 #include "session.h"
 #include "console-kit.h"
 #include "login1.h"
+#include "log-file.h"
 #include "privileges.h"
 #include "x-authority.h"
 #include "configuration.h"
@@ -220,6 +225,32 @@ updwtmpx (const gchar *wtmp_file, struct utmpx *ut)
     updwtmp (wtmp_file, &u);
 }
 
+#if HAVE_LIBAUDIT
+static void
+audit_event (int type, const gchar *username, uid_t uid, const gchar *remote_host_name, const gchar *tty, gboolean success)
+{
+    int auditfd, result;
+    const char *op = NULL;
+
+    auditfd = audit_open ();
+    if (auditfd < 0) {
+        g_printerr ("Error opening audit socket: %s\n", strerror (errno));
+        return;
+    }
+
+    if (type == AUDIT_USER_LOGIN)
+        op = "login";
+    else if (type == AUDIT_USER_LOGOUT)
+        op = "logout";
+    result = success == TRUE ? 1 : 0;
+
+    if (audit_log_acct_message (auditfd, type, NULL, op, username, uid, remote_host_name, NULL, tty, result) <= 0)
+        g_printerr ("Error writing audit message: %s\n", strerror (errno));
+
+    close (auditfd);
+}
+#endif
+
 int
 session_child_run (int argc, char **argv)
 {
@@ -227,7 +258,8 @@ session_child_run (int argc, char **argv)
     int i, version, fd, result;
     gboolean auth_complete = TRUE;
     User *user = NULL;
-    gchar *log_filename, *log_backup_filename = NULL;
+    gchar *log_filename;
+    LogMode log_mode = LOG_MODE_BACKUP_AND_TRUNCATE;
     gsize env_length;
     gsize command_argc;
     gchar **command_argv;
@@ -248,6 +280,12 @@ session_child_run (int argc, char **argv)
     const gchar *locale_value;
     gchar *locale_var;
     static const gchar * const locale_var_names[] = {
+        "LC_PAPER",
+        "LC_NAME",
+        "LC_ADDRESS",
+        "LC_TELEPHONE",
+        "LC_MEASUREMENT",
+        "LC_IDENTIFICATION",
         "LC_COLLATE",
         "LC_CTYPE",
         "LC_MONETARY",
@@ -386,6 +424,10 @@ session_child_run (int argc, char **argv)
             ut.ut_tv.tv_usec = tv.tv_usec;
 
             updwtmpx ("/var/log/btmp", &ut);
+
+#if HAVE_LIBAUDIT
+            audit_event (AUDIT_USER_LOGIN, username, -1, remote_host_name, tty, FALSE);
+#endif
         }
 
         /* Check account is valid */
@@ -457,6 +499,8 @@ session_child_run (int argc, char **argv)
 
     /* Get the command to run (blocks) */
     log_filename = read_string ();
+    if (version >= 3)
+        read_data (&log_mode, sizeof (log_mode));
     if (version >= 1)
     {
         g_free (tty);
@@ -491,11 +535,9 @@ session_child_run (int argc, char **argv)
     /* Redirect stderr to a log file */
     if (log_filename)
     {
-        log_backup_filename = g_strdup_printf ("%s.old", log_filename);
         if (g_path_is_absolute (log_filename))
         {
-            rename (log_filename, log_backup_filename);
-            fd = open (log_filename, O_WRONLY | O_APPEND | O_CREAT, 0600);
+            fd = log_file_open (log_filename, log_mode);
             dup2 (fd, STDERR_FILENO);
             close (fd);
             g_free (log_filename);
@@ -649,8 +691,7 @@ session_child_run (int argc, char **argv)
 
         if (log_filename)
         {
-            rename (log_filename, log_backup_filename);
-            fd = open (log_filename, O_WRONLY | O_APPEND | O_CREAT, 0600);
+            fd = log_file_open (log_filename, log_mode);
             if (fd >= 0)
             {
                 dup2 (fd, STDERR_FILENO);
@@ -704,6 +745,10 @@ session_child_run (int argc, char **argv)
                 g_printerr ("Failed to write utmpx: %s\n", strerror (errno));
             endutxent ();
             updwtmpx ("/var/log/wtmp", &ut);
+
+#if HAVE_LIBAUDIT          
+            audit_event (AUDIT_USER_LOGIN, username, uid, remote_host_name, tty, TRUE);
+#endif
         }
 
         waitpid (child_pid, &return_code, 0);
@@ -740,6 +785,10 @@ session_child_run (int argc, char **argv)
                 g_printerr ("Failed to write utmpx: %s\n", strerror (errno));
             endutxent ();
             updwtmpx ("/var/log/wtmp", &ut);
+
+#if HAVE_LIBAUDIT
+            audit_event (AUDIT_USER_LOGOUT, username, uid, remote_host_name, tty, TRUE);
+#endif
         }
     }
 

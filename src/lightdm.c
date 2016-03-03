@@ -33,6 +33,7 @@
 #include "shared-data-manager.h"
 #include "user-list.h"
 #include "login1.h"
+#include "log-file.h"
 
 static gchar *config_path = NULL;
 static GMainLoop *loop = NULL;
@@ -124,7 +125,8 @@ log_cb (const gchar *log_domain, GLogLevelFlags log_level, const gchar *message,
 static void
 log_init (void)
 {
-    gchar *log_dir, *path, *old_path;
+    gchar *log_dir, *path;
+    gboolean backup_logs;
 
     log_timer = g_timer_new ();
 
@@ -133,13 +135,8 @@ log_init (void)
     path = g_build_filename (log_dir, "lightdm.log", NULL);
     g_free (log_dir);
 
-    /* Move old file out of the way */
-    old_path = g_strdup_printf ("%s.old", path);
-    rename (path, old_path);
-    g_free (old_path);
-
-    /* Create new file and log to it */
-    log_fd = open (path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    backup_logs = config_get_boolean (config_get_instance (), "LightDM", "backup-logs");
+    log_fd = log_file_open (path, backup_logs ? LOG_MODE_BACKUP_AND_TRUNCATE : LOG_MODE_APPEND);
     fcntl (log_fd, F_SETFD, FD_CLOEXEC);
     g_log_set_default_handler (log_cb, NULL);
 
@@ -153,18 +150,16 @@ get_config_sections (const gchar *seat_name)
     gchar **groups, **i;
     GList *config_sections = NULL;
 
-    config_sections = g_list_append (config_sections, g_strdup ("SeatDefaults"));
-
-    if (!seat_name)
-        return config_sections;
+    /* Load seat defaults first */
+    config_sections = g_list_append (config_sections, g_strdup ("Seat:*"));
 
     groups = config_get_groups (config_get_instance ());
     for (i = groups; *i; i++)
     {
-        if (g_str_has_prefix (*i, "Seat:"))
+        if (g_str_has_prefix (*i, "Seat:") && strcmp (*i, "Seat:*") != 0)
         {
             const gchar *seat_name_glob = *i + strlen ("Seat:");
-            if (g_pattern_match_simple (seat_name_glob, seat_name))
+            if (g_pattern_match_simple (seat_name_glob, seat_name ? seat_name : ""))
                 config_sections = g_list_append (config_sections, g_strdup (*i));
         }
     }
@@ -184,8 +179,9 @@ set_seat_properties (Seat *seat, const gchar *seat_name)
     for (link = sections; link; link = link->next)
     {
         const gchar *section = link->data;
-        g_debug ("Loading properties from config section %s", section);
         keys = config_get_keys (config_get_instance (), section);
+
+        l_debug (seat, "Loading properties from config section %s", section);
         for (i = 0; keys && keys[i]; i++)
         {
             gchar *value = config_get_string (config_get_instance (), section, keys[i]);
@@ -883,7 +879,7 @@ bus_acquired_cb (GDBusConnection *connection,
     /* Start the XDMCP server */
     if (config_get_boolean (config_get_instance (), "XDMCPServer", "enabled"))
     {
-        gchar *key_name, *key = NULL;
+        gchar *key_name, *key = NULL, *listen_address;
 
         xdmcp_server = xdmcp_server_new ();
         if (config_has_key (config_get_instance (), "XDMCPServer", "port"))
@@ -893,6 +889,9 @@ bus_acquired_cb (GDBusConnection *connection,
             if (port > 0)
                 xdmcp_server_set_port (xdmcp_server, port);
         }
+        listen_address = config_get_string (config_get_instance (), "XDMCPServer", "listen-address");
+        xdmcp_server_set_listen_address (xdmcp_server, listen_address);
+        g_free (listen_address);
         g_signal_connect (xdmcp_server, XDMCP_SERVER_SIGNAL_NEW_SESSION, G_CALLBACK (xdmcp_session_cb), NULL);
 
         key_name = config_get_string (config_get_instance (), "XDMCPServer", "key");
@@ -908,7 +907,7 @@ bus_acquired_cb (GDBusConnection *connection,
             keys = g_key_file_new ();
             result = g_key_file_load_from_file (keys, path, G_KEY_FILE_NONE, &error);
             if (error)
-                g_debug ("Error getting key %s", error->message);
+                g_warning ("Unable to load keys from %s: %s", path, error->message);
             g_clear_error (&error);
 
             if (result)
@@ -916,7 +915,7 @@ bus_acquired_cb (GDBusConnection *connection,
                 if (g_key_file_has_key (keys, "keyring", key_name, NULL))
                     key = g_key_file_get_string (keys, "keyring", key_name, NULL);
                 else
-                    g_debug ("Key %s not defined", key_name);
+                    g_warning ("Key %s not defined", key_name);
             }
             g_free (path);
             g_key_file_free (keys);
@@ -925,9 +924,18 @@ bus_acquired_cb (GDBusConnection *connection,
             xdmcp_server_set_key (xdmcp_server, key);
         g_free (key_name);
         g_free (key);
-
-        g_debug ("Starting XDMCP server on UDP/IP port %d", xdmcp_server_get_port (xdmcp_server));
-        xdmcp_server_start (xdmcp_server);
+      
+        if (key_name && !key)
+        {
+            exit_code = EXIT_FAILURE;
+            display_manager_stop (display_manager);
+            return;
+        }
+        else
+        {
+            g_debug ("Starting XDMCP server on UDP/IP port %d", xdmcp_server_get_port (xdmcp_server));
+            xdmcp_server_start (xdmcp_server);
+        }
     }
 
     /* Start the VNC server */
@@ -938,6 +946,8 @@ bus_acquired_cb (GDBusConnection *connection,
         path = g_find_program_in_path ("Xvnc");
         if (path)
         {
+            gchar *listen_address;
+
             vnc_server = vnc_server_new ();
             if (config_has_key (config_get_instance (), "VNCServer", "port"))
             {
@@ -946,6 +956,9 @@ bus_acquired_cb (GDBusConnection *connection,
                 if (port > 0)
                     vnc_server_set_port (vnc_server, port);
             }
+            listen_address = config_get_string (config_get_instance (), "VNCServer", "listen-address");
+            vnc_server_set_listen_address (vnc_server, listen_address);
+            g_free (listen_address);
             g_signal_connect (vnc_server, VNC_SERVER_SIGNAL_NEW_CONNECTION, G_CALLBACK (vnc_connection_cb), NULL);
 
             g_debug ("Starting VNC server on TCP/IP port %d", vnc_server_get_port (vnc_server));
@@ -1371,36 +1384,40 @@ main (int argc, char **argv)
         config_set_string (config_get_instance (), "LightDM", "greeter-user", GREETER_USER);
     if (!config_has_key (config_get_instance (), "LightDM", "lock-memory"))
         config_set_boolean (config_get_instance (), "LightDM", "lock-memory", TRUE);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "type"))
-        config_set_string (config_get_instance (), "SeatDefaults", "type", "xlocal");
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "pam-service"))
-        config_set_string (config_get_instance (), "SeatDefaults", "pam-service", "lightdm");
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "pam-autologin-service"))
-        config_set_string (config_get_instance (), "SeatDefaults", "pam-autologin-service", "lightdm-autologin");
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "pam-greeter-service"))
-        config_set_string (config_get_instance (), "SeatDefaults", "pam-greeter-service", "lightdm-greeter");
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "xserver-command"))
-        config_set_string (config_get_instance (), "SeatDefaults", "xserver-command", "X");
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "xserver-share"))
-        config_set_boolean (config_get_instance (), "SeatDefaults", "xserver-share", TRUE);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "unity-compositor-command"))
-        config_set_string (config_get_instance (), "SeatDefaults", "unity-compositor-command", "unity-system-compositor");
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "start-session"))
-        config_set_boolean (config_get_instance (), "SeatDefaults", "start-session", TRUE);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "allow-user-switching"))
-        config_set_boolean (config_get_instance (), "SeatDefaults", "allow-user-switching", TRUE);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "allow-guest"))
-        config_set_boolean (config_get_instance (), "SeatDefaults", "allow-guest", TRUE);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "greeter-allow-guest"))
-        config_set_boolean (config_get_instance (), "SeatDefaults", "greeter-allow-guest", TRUE);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "greeter-show-remote-login"))
-        config_set_boolean (config_get_instance (), "SeatDefaults", "greeter-show-remote-login", TRUE);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "greeter-session"))
-        config_set_string (config_get_instance (), "SeatDefaults", "greeter-session", GREETER_SESSION);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "user-session"))
-        config_set_string (config_get_instance (), "SeatDefaults", "user-session", USER_SESSION);
-    if (!config_has_key (config_get_instance (), "SeatDefaults", "session-wrapper"))
-        config_set_string (config_get_instance (), "SeatDefaults", "session-wrapper", "lightdm-session");
+    if (!config_has_key (config_get_instance (), "LightDM", "backup-logs"))
+        config_set_boolean (config_get_instance (), "LightDM", "backup-logs", TRUE);
+    if (!config_has_key (config_get_instance (), "Seat:*", "type"))
+        config_set_string (config_get_instance (), "Seat:*", "type", "xlocal");
+    if (!config_has_key (config_get_instance (), "Seat:*", "pam-service"))
+        config_set_string (config_get_instance (), "Seat:*", "pam-service", "lightdm");
+    if (!config_has_key (config_get_instance (), "Seat:*", "pam-autologin-service"))
+        config_set_string (config_get_instance (), "Seat:*", "pam-autologin-service", "lightdm-autologin");
+    if (!config_has_key (config_get_instance (), "Seat:*", "pam-greeter-service"))
+        config_set_string (config_get_instance (), "Seat:*", "pam-greeter-service", "lightdm-greeter");
+    if (!config_has_key (config_get_instance (), "Seat:*", "xserver-command"))
+        config_set_string (config_get_instance (), "Seat:*", "xserver-command", "X");
+    if (!config_has_key (config_get_instance (), "Seat:*", "xmir-command"))
+        config_set_string (config_get_instance (), "Seat:*", "xmir-command", "Xmir");
+    if (!config_has_key (config_get_instance (), "Seat:*", "xserver-share"))
+        config_set_boolean (config_get_instance (), "Seat:*", "xserver-share", TRUE);
+    if (!config_has_key (config_get_instance (), "Seat:*", "unity-compositor-command"))
+        config_set_string (config_get_instance (), "Seat:*", "unity-compositor-command", "unity-system-compositor");
+    if (!config_has_key (config_get_instance (), "Seat:*", "start-session"))
+        config_set_boolean (config_get_instance (), "Seat:*", "start-session", TRUE);
+    if (!config_has_key (config_get_instance (), "Seat:*", "allow-user-switching"))
+        config_set_boolean (config_get_instance (), "Seat:*", "allow-user-switching", TRUE);
+    if (!config_has_key (config_get_instance (), "Seat:*", "allow-guest"))
+        config_set_boolean (config_get_instance (), "Seat:*", "allow-guest", TRUE);
+    if (!config_has_key (config_get_instance (), "Seat:*", "greeter-allow-guest"))
+        config_set_boolean (config_get_instance (), "Seat:*", "greeter-allow-guest", TRUE);
+    if (!config_has_key (config_get_instance (), "Seat:*", "greeter-show-remote-login"))
+        config_set_boolean (config_get_instance (), "Seat:*", "greeter-show-remote-login", TRUE);
+    if (!config_has_key (config_get_instance (), "Seat:*", "greeter-session"))
+        config_set_string (config_get_instance (), "Seat:*", "greeter-session", GREETER_SESSION);
+    if (!config_has_key (config_get_instance (), "Seat:*", "user-session"))
+        config_set_string (config_get_instance (), "Seat:*", "user-session", USER_SESSION);
+    if (!config_has_key (config_get_instance (), "Seat:*", "session-wrapper"))
+        config_set_string (config_get_instance (), "Seat:*", "session-wrapper", "lightdm-session");
     if (!config_has_key (config_get_instance (), "LightDM", "log-directory"))
         config_set_string (config_get_instance (), "LightDM", "log-directory", default_log_dir);
     g_free (default_log_dir);
@@ -1499,7 +1516,7 @@ main (int argc, char **argv)
 
             g_debug ("Adding default seat");
 
-            types = config_get_string_list (config_get_instance (), "SeatDefaults", "type");
+            types = config_get_string_list (config_get_instance (), "Seat:*", "type");
             for (type = types; type && *type; type++)
             {
                 seat = seat_new (*type, "seat0");

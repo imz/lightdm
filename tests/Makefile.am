@@ -34,6 +34,9 @@ TESTS = \
 	test-autologin-new-authtok \
 	test-autologin-timeout-gobject \
 	test-autologin-guest-timeout-gobject \
+	test-xserver-config \
+	test-allow-tcp \
+	test-allow-tcp-xorg-1.16 \
 	test-change-authentication \
 	test-restart-authentication \
 	test-cancel-authentication-gobject \
@@ -46,6 +49,7 @@ TESTS = \
 	test-cred-unavail \
 	test-autologin-session-error \
 	test-autologin-logout \
+	test-autologin-session \
 	test-autologin-timeout-logout \
 	test-autologin-previous-session \
 	test-autologin-guest \
@@ -165,14 +169,32 @@ TESTS = \
 	test-vnc-dimensions \
 	test-vnc-open-file-descriptors \
 	test-vnc-guest \
+	test-xremote-autologin \
+	test-xremote-login \
 	test-xdmcp-client \
+	test-xdmcp-client-xorg-1.16 \
 	test-xdmcp-server-autologin \
 	test-xdmcp-server-login \
 	test-xdmcp-server-double-login \
 	test-xdmcp-server-guest \
+	test-xdmcp-server-keep-alive \
+	test-xdmcp-server-xdm-authentication \
+	test-xdmcp-server-xdm-authentication-missing-data \
+	test-xdmcp-server-xdm-authentication-short-data \
+	test-xdmcp-server-xdm-authentication-long-data \
+	test-xdmcp-server-xdm-authentication-required \
+	test-xdmcp-server-xdm-authentication-missing-key \
+	test-xdmcp-server-xdm-authentication-no-key \
+	test-xdmcp-server-xdm-authentication-invalid-authorization \
+	test-xdmcp-server-invalid-authentication \
+	test-xdmcp-server-request-without-addresses \
+	test-xdmcp-server-request-without-authorization \
+	test-xdmcp-server-request-invalid-authentication \
+	test-xdmcp-server-request-invalid-authorization \
 	test-utmp-login \
 	test-utmp-autologin \
 	test-utmp-wrong-password \
+	test-audit-autologin \
 	test-no-accounts-service \
 	test-console-kit \
 	test-no-console-kit \
@@ -184,6 +206,7 @@ TESTS = \
 	test-power-no-services-gobject \
 	test-open-file-descriptors \
 	test-xdmcp-server-open-file-descriptors \
+	test-add-local-x-seat \
 	test-multi-seat \
 	test-multi-seat-seat0-non-graphical \
 	test-multi-seat-seat0-non-graphical-disabled \
@@ -198,6 +221,9 @@ TESTS = \
 	test-mir-session-crash \
 	test-mir-session-compositor-crash \
 	test-mir-container-session \
+	test-wayland-autologin \
+	test-wayland-greeter \
+	test-wayland-session \
 	test-unity-compositor-command \
 	test-unity-compositor-not-found \
 	test-unity-compositor-fail-start \
@@ -207,6 +233,7 @@ TESTS = \
 	test-unity-compositor-next-session \
 	test-unity-compositor-mir-next-session \
 	test-unity-autologin \
+	test-unity-autologin-legacy \
 	test-unity-login \
 	test-unity-switch \
 	test-unity-plymouth \
@@ -218,7 +245,8 @@ TESTS = \
 	test-unity-mir-session-x-greeter \
 	test-unity-mir-switch \
 	test-unity-mir-switch-to-user-resettable \
-	test-unity-mir-script-hooks
+	test-unity-mir-script-hooks \
+	test-seatdefaults-still-supported
 
 #	test-mir-script-hooks \
 #	test-session-exit-error
@@ -346,18 +374,25 @@ EXTRA_DIST = \
 	data/greeters/test-python-greeter.desktop \
 	data/greeters/test-qt4-greeter.desktop \
 	data/greeters/test-qt5-greeter.desktop \
+	data/greeters/test-wayland-greeter.desktop \
+	data/keys.conf \
 	data/sessions/alternative.desktop \
 	data/sessions/default.desktop \
 	data/sessions/mir.desktop \
 	data/sessions/mir-container.desktop \
 	data/sessions/named.desktop \
 	data/sessions/named-legacy.desktop \
+	data/sessions/wayland.desktop \
 	scripts/0-additional.conf \
 	scripts/1-additional.conf \
+	scripts/add-local-x-seat.conf \        
 	scripts/additional-config.conf \
 	scripts/additional-config-priority.conf \
 	scripts/additional-system-config.conf \
 	scripts/additional-system-config-priority.conf \
+	scripts/allow-tcp.conf \
+	scripts/allow-tcp-xorg-1.16.conf \
+	scripts/audit-autologin.conf \
 	scripts/autologin.conf \
 	scripts/autologin-guest.conf \
 	scripts/autologin-guest-fail-setup-script.conf \
@@ -375,6 +410,7 @@ EXTRA_DIST = \
 	scripts/autologin-new-authtok.conf \
 	scripts/autologin-password.conf \
 	scripts/autologin-previous-session.conf \
+	scripts/autologin-session.conf \
 	scripts/autologin-session-crash.conf \
 	scripts/autologin-session-error.conf \
 	scripts/autologin-timeout.conf \
@@ -412,7 +448,7 @@ EXTRA_DIST = \
 	scripts/language-no-accounts-service.conf \
 	scripts/lock-seat.conf \
 	scripts/lock-seat-after-vt-switch.conf \
-	scripts/lock-seat-console-kit.conf \    
+	scripts/lock-seat-console-kit.conf \
 	scripts/lock-seat-resettable.conf \
 	scripts/lock-seat-return-session.conf \
 	scripts/lock-seat-return-session-console-kit.conf \
@@ -521,6 +557,7 @@ EXTRA_DIST = \
 	scripts/switch-to-user-resettable.conf \
 	scripts/system-xauthority.conf \
 	scripts/unity-autologin.conf \
+	scripts/unity-autologin-legacy.conf \
 	scripts/unity-compositor-command.conf \
 	scripts/unity-compositor-crash.conf \
 	scripts/unity-compositor-fail-ready.conf \
@@ -562,14 +599,36 @@ EXTRA_DIST = \
 	scripts/vnc-guest.conf \
 	scripts/vnc-login.conf \
 	scripts/vnc-open-file-descriptors.conf \
+	scripts/wayland-autologin.conf \
+	scripts/wayland-greeter.conf \
+	scripts/wayland-session.conf \
 	scripts/xauthority.conf \
 	scripts/xdg-current-desktop.conf \
 	scripts/xdg-current-desktop-legacy.conf \
 	scripts/xdmcp-client.conf \
+	scripts/xdmcp-client-xorg-1.16.conf \
 	scripts/xdmcp-server-autologin.conf \
 	scripts/xdmcp-server-double-login.conf \
 	scripts/xdmcp-server-guest.conf \
+	scripts/xdmcp-server-invalid-authentication.conf \
+	scripts/xdmcp-server-keep-alive.conf \
 	scripts/xdmcp-server-login.conf \
 	scripts/xdmcp-server-open-file-descriptors.conf \
+	scripts/xdmcp-server-request-invalid-authentication.conf \
+	scripts/xdmcp-server-request-invalid-authorization.conf \
+	scripts/xdmcp-server-request-without-addresses.conf \
+	scripts/xdmcp-server-request-without-authorization.conf \
+	scripts/xdmcp-server-xdm-authentication.conf \
+	scripts/xdmcp-server-xdm-authentication-invalid-authorization.conf \
+	scripts/xdmcp-server-xdm-authentication-long-data.conf \
+	scripts/xdmcp-server-xdm-authentication-missing-key.conf \
+	scripts/xdmcp-server-xdm-authentication-missing-data.conf \
+	scripts/xdmcp-server-xdm-authentication-no-key.conf \
+	scripts/xdmcp-server-xdm-authentication-required.conf \
+	scripts/xdmcp-server-xdm-authentication-short-data.conf \
+	scripts/xremote-autologin.conf \
+	scripts/xremote-login.conf \
+	scripts/xserver-config.conf \
 	scripts/xserver-fail-start.conf \
-	scripts/xserver-no-share.conf
+	scripts/xserver-no-share.conf \
+	scripts/seatdefaults-still-supported.conf

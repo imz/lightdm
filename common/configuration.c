@@ -34,7 +34,7 @@ config_get_instance (void)
 }
 
 gboolean
-config_load_from_file (Configuration *config, const gchar *path, GError **error)
+config_load_from_file (Configuration *config, const gchar *path, GList **messages, GError **error)
 {
     GKeyFile *key_file;
     gchar *source_path, **groups;
@@ -53,8 +53,17 @@ config_load_from_file (Configuration *config, const gchar *path, GError **error)
     groups = g_key_file_get_groups (key_file, NULL);
     for (i = 0; groups[i]; i++)
     {
-        gchar **keys;
+        gchar **keys, *group;
         int j;
+
+        /* Move keys from deprecated [SeatDefaults] into [Seat:*] */
+        group = groups[i];
+        if (strcmp (group, "SeatDefaults") == 0)
+        {
+            if (messages)
+                *messages = g_list_append (*messages, g_strdup ("  [SeatDefaults] is now called [Seat:*], please update this configuration"));
+            group = "Seat:*";
+        }
 
         keys = g_key_file_get_keys (key_file, groups[i], NULL, error);
         if (!keys)
@@ -64,11 +73,16 @@ config_load_from_file (Configuration *config, const gchar *path, GError **error)
         {
             gchar *value, *k;
 
+            if (messages && g_str_has_prefix (group, "Seat:") && strcmp (keys[j], "xdg-seat") == 0)
+                *messages = g_list_append (*messages, g_strdup_printf ("  [%s] contains deprecated option xdg-seat, this can be safely removed", group));
+            if (messages && strcmp (group, "LightDM") == 0 && strcmp (keys[j], "logind-load-seats") == 0)
+                *messages = g_list_append (*messages, g_strdup ("  [LightDM] contains deprecated option logind-load-seats, this can be safely removed"));
+
             value = g_key_file_get_value (key_file, groups[i], keys[j], NULL);
-            g_key_file_set_value (config->priv->key_file, groups[i], keys[j], value);
+            g_key_file_set_value (config->priv->key_file, group, keys[j], value);
             g_free (value);
 
-            k = g_strdup_printf ("%s]%s", groups[i], keys[j]);
+            k = g_strdup_printf ("%s]%s", group, keys[j]);
             g_hash_table_insert (config->priv->key_sources, k, source_path);
         }
 
@@ -137,7 +151,7 @@ load_config_directory (const gchar *path, GList **messages)
         {
             if (messages)
                 *messages = g_list_append (*messages, g_strdup_printf ("Loading configuration from %s", conf_path));
-            config_load_from_file (config_get_instance (), conf_path, &error);
+            config_load_from_file (config_get_instance (), conf_path, messages, &error);
             if (error && !g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
                 g_printerr ("Failed to load configuration from %s: %s\n", filename, error->message);
             g_clear_error (&error);
@@ -194,7 +208,7 @@ config_load_from_standard_locations (Configuration *config, const gchar *config_
 
     if (messages)
         *messages = g_list_append (*messages, g_strdup_printf ("Loading configuration from %s", path));
-    if (!config_load_from_file (config, path, &error))
+    if (!config_load_from_file (config, path, messages, &error))
     {
         gboolean is_empty;
 
@@ -303,7 +317,22 @@ config_set_boolean (Configuration *config, const gchar *section, const gchar *ke
 gboolean
 config_get_boolean (Configuration *config, const gchar *section, const gchar *key)
 {
-    return g_key_file_get_boolean (config->priv->key_file, section, key, NULL);
+    /* We don't use the standard function because it doesn't work with trailing whitespace:
+     * https://bugzilla.gnome.org/show_bug.cgi?id=664740
+     */
+    /*return g_key_file_get_boolean (config->priv->key_file, section, key, NULL);*/
+
+    gchar *value;
+    gboolean v;
+
+    value = g_key_file_get_value (config->priv->key_file, section, key, NULL);
+    if (!value)
+        return FALSE;
+    g_strchomp (value);
+    v = strcmp (value, "true") == 0;
+    g_free (value);
+
+    return v;
 }
 
 static void

@@ -33,6 +33,10 @@ typedef struct
     XServerClass parent_class;
 } XServerLocalClass;
 
+const gchar *x_server_local_get_version (void);
+
+gint x_server_local_version_compare (guint major, guint minor);
+
 guint x_server_local_get_unused_display_number (void);
 
 void x_server_local_release_display_number (guint display_number);
@@ -50,8 +54,6 @@ void x_server_local_set_config (XServerLocal *server, const gchar *path);
 void x_server_local_set_layout (XServerLocal *server, const gchar *layout);
 
 void x_server_local_set_xdg_seat (XServerLocal *server, const gchar *xdg_seat);
-
-void x_server_local_set_sharevts (XServerLocal *server, gboolean sharevts);
 
 void x_server_local_set_allow_tcp (XServerLocal *server, gboolean allow_tcp);
 

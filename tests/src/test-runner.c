@@ -557,6 +557,25 @@ handle_command (const gchar *command)
         if (v)
             seat->can_multi_session = strcmp (v, "TRUE") == 0;
     }
+    else if (strcmp (name, "ADD-LOCAL-X-SEAT") == 0)
+    {
+        GVariant *result;
+        const gchar *v;
+
+        v = g_hash_table_lookup (params, "DISPLAY");
+        result = g_dbus_connection_call_sync (g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL),
+                                              "org.freedesktop.DisplayManager",
+                                              "/org/freedesktop/DisplayManager",
+                                              "org.freedesktop.DisplayManager",
+                                              "AddLocalXSeat",
+                                              g_variant_new ("(i)", v ? atoi (v) : -1),
+                                              G_VARIANT_TYPE ("(o)"),
+                                              G_DBUS_CALL_FLAGS_NONE,
+                                              G_MAXINT,
+                                              NULL,
+                                              NULL);
+        g_variant_unref (result);
+    }
     else if (strcmp (name, "UPDATE-SEAT") == 0)
     {
         Login1Seat *seat;
@@ -966,6 +985,8 @@ handle_command (const gchar *command)
     else if (g_str_has_prefix (name, "SESSION-") ||
              g_str_has_prefix (name, "GREETER-") ||
              g_str_has_prefix (name, "XSERVER-") ||
+             g_str_has_prefix (name, "XMIR-") ||
+             g_str_has_prefix (name, "XVNC-") ||
              strcmp (name, "UNITY-SYSTEM-COMPOSITOR") == 0)
     {
         GList *link;
@@ -2614,6 +2635,8 @@ main (int argc, char **argv)
     if (!g_key_file_has_key (config, "test-runner-config", "have-config", NULL) || g_key_file_get_boolean (config, "test-runner-config", "have-config", NULL))
         if (system (g_strdup_printf ("cp %s %s/etc/lightdm/lightdm.conf", config_path, temp_dir)))
             perror ("Failed to copy configuration");
+    if (system (g_strdup_printf ("cp %s/tests/data/keys.conf %s/etc/lightdm/", SRCDIR, temp_dir)))
+        perror ("Failed to copy key configuration");
 
     additional_system_config = g_key_file_get_string (config, "test-runner-config", "additional-system-config", NULL);
     if (additional_system_config)

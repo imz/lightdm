@@ -43,6 +43,7 @@ greeters/qt/*_moc*.cpp
 greeters/qt/ui_*.h
 liblightdm-gobject/*.gir
 liblightdm-gobject/*.typelib
+liblightdm-gobject/*.vapi
 liblightdm-gobject/liblightdm-gobject-*.pc
 liblightdm-qt/liblightdm-qt-*.pc
 liblightdm-qt/liblightdm-qt5-*.pc
@@ -73,4 +74,5 @@ tests/src/test-session
 tests/src/unity-system-compositor
 tests/src/vnc-client
 tests/src/X
+tests/src/Xmir
 tests/src/Xvnc

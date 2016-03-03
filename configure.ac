@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT(lightdm, 1.14.0)
+AC_INIT(lightdm, 1.16.7)
 AC_CONFIG_MACRO_DIR(m4)
 AC_CONFIG_HEADER(config.h)
 AM_INIT_AUTOMAKE([1.11 no-dist-gzip dist-xz foreign])
@@ -29,6 +29,8 @@ AC_SUBST(WARN_CFLAGS)
 AC_SUBST(WARN_CXXFLAGS)
 
 GOBJECT_INTROSPECTION_CHECK(0.9.5)
+
+VAPIGEN_CHECK([0.16])
 
 dnl ###########################################################################
 dnl Dependencies
@@ -127,6 +129,25 @@ if test x"$enable_liblightdm_qt5" != "xno"; then
 fi
 AM_CONDITIONAL(COMPILE_LIBLIGHTDM_QT5, test x"$compile_liblightdm_qt5" != "xno")
 
+AC_ARG_ENABLE([libaudit],
+    AS_HELP_STRING([--enable-libaudit],
+                   [Enable libaudit logging of login and logout events [[default=auto]]]),
+    [enable_libaudit=$enableval],
+    [enable_libaudit=auto])
+use_libaudit=no    
+if test x"$enable_libaudit" != "xno"; then
+    AC_CHECK_LIB([audit], [audit_log_user_message],
+                 [use_libaudit=yes
+                  AC_DEFINE(HAVE_LIBAUDIT, 1, [libaudit support])
+                  LIGHTDM_LIBS="${LIGHTDM_LIBS} -laudit"
+                 ],
+                 [if test "x$enable_libaudit" != xauto; then
+                    AC_MSG_FAILURE(
+                      [--enable-libaudit was given, but test for libaudit failed])
+                  fi
+                 ])
+fi
+
 AC_MSG_CHECKING(whether to build tests)
 AC_ARG_ENABLE(tests,
         AS_HELP_STRING([--disable-tests], [Disable tests building]),
@@ -220,7 +241,9 @@ echo "
         Greeter user:             $GREETER_USER
         User session:             $USER_SESSION
         GObject introspection:    $found_introspection
+        Vala bindings:            $enable_vala
         liblightdm-qt:            $compile_liblightdm_qt4
         liblightdm-qt5:           $compile_liblightdm_qt5
+        libaudit support:         $use_libaudit
         Enable tests:             $enable_tests
 "

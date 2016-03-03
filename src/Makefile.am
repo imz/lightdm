@@ -19,6 +19,8 @@ lightdm_SOURCES = \
 	logger.h \
 	login1.c \
 	login1.h \
+	log-file.c \
+	log-file.h \
 	mir-server.c \
 	mir-server.h \
 	plymouth.c \
@@ -51,6 +53,8 @@ lightdm_SOURCES = \
 	vnc-server.h \
 	vt.c \
 	vt.h \
+	wayland-session.c \
+	wayland-session.h \
 	x-authority.c \
 	x-authority.h \
 	x-server-local.c \
@@ -78,7 +82,8 @@ lightdm_CFLAGS = \
 	-DLOG_DIR=\"$(localstatedir)/log/lightdm\" \
 	-DRUN_DIR=\"$(localstatedir)/run/lightdm\" \
 	-DCACHE_DIR=\"$(localstatedir)/cache/lightdm\" \
-	-DSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions:$(pkgdatadir)/sessions\" \
+	-DSESSIONS_DIR=\"$(sysconfdir)/lightdm/sessions:$(pkgdatadir)/sessions:$(datadir)/xsessions:$(datadir)/wayland-sessions\" \
+	-DWAYLAND_SESSIONS_DIR=\"$(datadir)/wayland-sessions\" \
 	-DREMOTE_SESSIONS_DIR=\"$(pkgdatadir)/remote-sessions\" \
 	-DGREETERS_DIR=\"$(pkgdatadir)/greeters:$(datadir)/xgreeters\"
 
@@ -109,6 +114,3 @@ lightdm_guest_session_CFLAGS = \
 
 EXTRA_DIST = \
 	display-manager.xml
-
-DISTCLEANFILES = \
-	Makefile.in

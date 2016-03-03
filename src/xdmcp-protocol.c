@@ -10,8 +10,10 @@
  */
 
 #include <string.h>
+#include <gio/gio.h>
 
 #include "xdmcp-protocol.h"
+#include "x-authority.h"
 
 typedef struct
 {
@@ -211,8 +213,8 @@ xdmcp_packet_decode (const guint8 *data, gsize data_length)
         packet->Query.authentication_names = read_string_array (&reader);
         break;
     case XDMCP_ForwardQuery:
-        packet->ForwardQuery.client_address = read_string (&reader);
-        packet->ForwardQuery.client_port = read_string (&reader);
+        read_data (&reader, &packet->ForwardQuery.client_address);
+        read_data (&reader, &packet->ForwardQuery.client_port);
         packet->ForwardQuery.authentication_names = read_string_array (&reader);
         break;
     case XDMCP_Willing:
@@ -324,8 +326,8 @@ xdmcp_packet_encode (XDMCPPacket *packet, guint8 *data, gsize max_length)
         write_string_array (&writer, packet->Query.authentication_names);
         break;
     case XDMCP_ForwardQuery:
-        write_string (&writer, packet->ForwardQuery.client_address);
-        write_string (&writer, packet->ForwardQuery.client_port);
+        write_data (&writer, &packet->ForwardQuery.client_address);
+        write_data (&writer, &packet->ForwardQuery.client_port);
         write_string_array (&writer, packet->ForwardQuery.authentication_names);
         break;
     case XDMCP_Willing:
@@ -442,7 +444,7 @@ string_list_tostring (gchar **strings)
 gchar *
 xdmcp_packet_tostring (XDMCPPacket *packet)
 {
-    gchar *string, *t, *t2;
+    gchar *string, *t, *t2, *t5;
     gint i;
     GString *t3;
 
@@ -464,10 +466,14 @@ xdmcp_packet_tostring (XDMCPPacket *packet)
         g_free (t);
         return string;
     case XDMCP_ForwardQuery:
-        t = string_list_tostring (packet->ForwardQuery.authentication_names);
-        string = g_strdup_printf ("ForwardQuery(client_address='%s' client_port='%s' authentication_names=[%s])",
-                                  packet->ForwardQuery.client_address, packet->ForwardQuery.client_port, t);
+        t = data_tostring (&packet->ForwardQuery.client_address);
+        t2 = data_tostring (&packet->ForwardQuery.client_port);
+        t5 = string_list_tostring (packet->ForwardQuery.authentication_names);      
+        string = g_strdup_printf ("ForwardQuery(client_address=%s client_port=%s authentication_names=[%s])",
+                                  t, t2, t5);
         g_free (t);
+        g_free (t2);
+        g_free (t5);
         return string;
     case XDMCP_Willing:
         return g_strdup_printf ("Willing(authentication_name='%s' hostname='%s' status='%s')",
@@ -481,13 +487,31 @@ xdmcp_packet_tostring (XDMCPPacket *packet)
         t3 = g_string_new ("");
         for (i = 0; i < packet->Request.n_connections; i++)
         {
-            gchar *t4;
+            XDMCPConnection *connection = &packet->Request.connections[i];
+            GSocketFamily family = G_SOCKET_FAMILY_INVALID;
 
             if (i != 0)
                g_string_append (t3, " ");
-            t4 = data_tostring (&packet->Request.connections[i].address);
-            g_string_append_printf (t3, "(%d, %s)", packet->Request.connections[i].type, t4);
-            g_free (t4);
+
+            if (connection->type == XAUTH_FAMILY_INTERNET && connection->address.length == 4)
+                family = G_SOCKET_FAMILY_IPV4;
+            else if (connection->type == XAUTH_FAMILY_INTERNET6 && connection->address.length == 16)
+                family = G_SOCKET_FAMILY_IPV6;
+
+            if (family != G_SOCKET_FAMILY_INVALID)
+            {
+                GInetAddress *address = g_inet_address_new_from_bytes (connection->address.data, family);
+                gchar *t4 = g_inet_address_to_string (address);
+                g_string_append (t3, t4);
+                g_free (t4);
+                g_object_unref (address);
+            }
+            else
+            {
+                gchar *t4 = data_tostring (&connection->address);
+                g_string_append_printf (t3, "(%d, %s)", connection->type, t4);
+                g_free (t4);
+            }
         }
         string = g_strdup_printf ("Request(display_number=%d connections=[%s] authentication_name='%s' authentication_data=%s authorization_names=[%s] manufacturer_display_id='%s')",
                                   packet->Request.display_number, t3->str, packet->Request.authentication_name, t2,
@@ -545,8 +569,8 @@ xdmcp_packet_free (XDMCPPacket *packet)
         g_strfreev (packet->Query.authentication_names);
         break;
     case XDMCP_ForwardQuery:
-        g_free (packet->ForwardQuery.client_address);
-        g_free (packet->ForwardQuery.client_port);
+        g_free (packet->ForwardQuery.client_address.data);
+        g_free (packet->ForwardQuery.client_port.data);      
         g_strfreev (packet->ForwardQuery.authentication_names);
         break;
     case XDMCP_Willing:

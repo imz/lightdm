@@ -1,3 +1,190 @@
+lightdm (1.16.7-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Fix dm-tool add-local-seat not working because LightDM is trying to
+      connect with TCP/IP (LP: #1529454)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 25 Jan 2016 17:35:34 +1300
+
+lightdm (1.16.6-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Handle XDMCP Request packet with no addresses. (LP: #1516831)
+    - Don't start LightDM if the XDMCP server is configured with a key that
+      doesn't exist. (LP: #1517685)
+    - Add IP addresses to XDMCP log messages.
+    - Refactor XDMCP error handling.
+    - Add more tests.
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Fri, 20 Nov 2015 15:46:15 +1300
+
+lightdm (1.16.5-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Handle trailing whitespace on boolean values in configuration.
+      (LP: #1507033)
+    - Add a backup-logs option that can be used to disable existing logging
+      files having a .old suffix added to them.
+    - Add LC_PAPER, LC_NAME, LC_ADDRESS, LC_TELEPHONE, LC_MEASUREMENT and
+      LC_IDENTIFICATION variables to the list of inherited locale variables.
+      (LP: #1511259)
+    - Implement XDMCP ForwardQuery. (LP: #1511545)
+    - Fix small memory leak in XDMCP logging code.
+    - Check the version of the X server we are running so we correctly pass
+      -listen tcp when required. (LP: #1449282)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Tue, 03 Nov 2015 16:47:08 +1300
+
+lightdm (1.16.4-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Fix apparmor profiles for running Chromium in guest sessions
+      (LP: #1504049)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Tue, 13 Oct 2015 11:47:16 +0100
+
+lightdm (1.16.3-0ubuntu2) wily; urgency=medium
+
+  * debian/patches/xorg-1.17.patch:
+    - Fix xserver-allow-tcp=true option not working with X.org 1.17
+      (LP: #1449282)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 12 Oct 2015 14:57:47 +0100
+
+lightdm (1.16.3-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Fix compile failing without libinput
+    - Fix compile failing without Vala
+  * debian/lightdm.lightdm-autologin.pam:
+  * debian/lightdm.pam:
+  * debian/rules:
+    - Disable libaudit support for now - Unity is not unlocking with these
+      changes (LP: #1498775)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 30 Sep 2015 09:30:57 +1300
+
+lightdm (1.16.2-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Fix compile failing without libinput  
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 16 Sep 2015 14:20:11 -0400
+
+lightdm (1.16.1-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Use libaudit to generate audit events (LP: #1478087)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 16 Sep 2015 13:43:34 -0400
+
+lightdm (1.16.0-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Update default configuration better explaining the seat configuration name
+      matching and dropping references to the obsolete [SeatDefaults] section
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 07 Sep 2015 10:52:54 +1200
+
+lightdm (1.15.3-0ubuntu3) wily; urgency=medium
+
+  * debian/lightdm.postrm:
+    - Don't remove the lightdm user/group on package removal. This fails if the
+      user is still in use and leaves the risk of another user being created
+      with the same UID. (LP: #924224)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 26 Aug 2015 09:35:56 +0100
+
+lightdm (1.15.3-0ubuntu2) wily; urgency=medium
+
+  * debian/lightdm.lightdm-greeter.pam:
+  * debian/lightdm.pam:
+    - Load pam_kwallet5 in pam profile (kwallet and kwallet5 are distinct
+      entities requiring sepreate unlocking)
+
+ -- Harald Sitter <sitter@kde.org>  Mon, 24 Aug 2015 12:50:00 +0200
+
+lightdm (1.15.3-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Drop Xorg option -sharevts. It's no longer required for non-seat0 X
+      servers since xorg-server release 1.16.
+  * debian/patches/autologin-session-workaround.patch:
+    - Workaround faulty setting from user-setup package (LP: #1484083)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 17 Aug 2015 10:39:27 +1200
+
+lightdm (1.15.2-0ubuntu2) wily; urgency=medium
+
+  * debian/control:
+    - Add build-depends on valac
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 10 Aug 2015 16:38:04 +1200
+
+lightdm (1.15.2-0ubuntu1) wily; urgency=medium
+
+  [ Robert Ancell ]
+  * New upstream release:
+    - Support Wayland sessions. (LP: #888391)
+    - Implement autologin-session option.    
+    - Generate Vala bindings from GIR instead of manually writing them. This
+      fixes some small bugs in both the Vala and GIR bindings.
+    - Don't remove autotools generated files in distclean.
+  * debian/control:
+    - Use standards version 3.9.6
+  * debian/liblightdm-gobject-1-0.symbols:
+    - Updated
+
+  [ Gunnar Hjalmarsson ]
+  * debian/lightdm-session:
+    - Prevent ~/.bashrc from being sourced when ~/.profile is sourced.
+      (LP: #1482641)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 10 Aug 2015 16:11:13 +1200
+
+lightdm (1.15.1-0ubuntu2) wily; urgency=medium
+
+  * debian/guest-session-auto.sh:
+    - Disable screenlocks for guest sessions on MATE, XFCE, Pantheon
+      (LP: #1481804)
+  * debian/control:
+    - Switch build-depends from transitional libgcrypt11-dev to libgcrypt20-dev
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Fri, 07 Aug 2015 12:50:38 +1200
+
+lightdm (1.15.1-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Fix default X server command set to XMir in 1.15.0.
+    - Internally merge the [SeatDefaults] and [Seat:*] sections together. The
+      previous method meant configuration snippets using a mix of old and new
+      naming would not correctly override eachother.
+    - Use IP address of XDMCP requests to contact X server if available.
+      (LP: #1481561)
+    - Add an option for XDMCP and VNC servers to only listen on one address.
+      (LP: #1390808)
+    - Fix configuration file warnings so they go to the log, not stderr.
+    - Warn if deprecated options logind-load-seats or xdg-seat are in
+      configuration. (LP: #1468057)
+    - Improve IP addresses in XDMCP log messages.
+    - Fix typo in dm-tool man page. (LP: #1470587)
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Wed, 05 Aug 2015 16:53:39 +1200
+
+lightdm (1.15.0-0ubuntu1) wily; urgency=medium
+
+  * New upstream release:
+    - Deprecate [SeatDefaults] in favour of [Seat:*]
+    - Use new Xmir binary when running X under Unity System Compositor
+
+ -- Robert Ancell <robert.ancell@canonical.com>  Mon, 18 May 2015 13:38:23 +1200
+
+lightdm (1.14.0-0ubuntu2) vivid; urgency=medium
+
+  * Quiesce initctl errors when not running under upstart. (LP: #1414420)
+
+ -- Martin Pitt <martin.pitt@ubuntu.com>  Wed, 08 Apr 2015 14:37:17 +0200
+
 lightdm (1.14.0-0ubuntu1) vivid; urgency=medium
 
   * New upstream release:
