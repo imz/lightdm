@@ -934,8 +934,18 @@ session_finalize (GObject *object)
         g_object_unref (self->priv->display_server);
     if (self->priv->pid)
         kill (self->priv->pid, SIGKILL);
-    close (self->priv->to_child_input);
-    close (self->priv->from_child_output);
+
+    /* It seems that the file descriptors below are
+     * closed automatically, making the following
+     * calls accidentally close the already re-opened
+     * descriptors while they are in use by another
+     * session process.
+     *
+     * Commented the close() calls out. FIXME.
+     */
+    //close (self->priv->to_child_input);
+    //close (self->priv->from_child_output);
+    
     if (self->priv->from_child_channel)
         g_io_channel_unref (self->priv->from_child_channel);
     if (self->priv->from_child_watch)
