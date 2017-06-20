@@ -460,9 +460,7 @@ session_watch_cb (GPid pid, gint status, gpointer data)
     /* Delete account if it is a guest one */
     if (session->priv->is_guest)
         guest_account_cleanup (session->priv->username);
-
-    close(session->priv->to_child_input);
-    close(session->priv->from_child_output);
+    
     /* Drop our reference on the child process, it has terminated */
     g_object_unref (session);
 }
@@ -934,18 +932,8 @@ session_finalize (GObject *object)
         g_object_unref (self->priv->display_server);
     if (self->priv->pid)
         kill (self->priv->pid, SIGKILL);
-
-    /* It seems that the file descriptors below are
-     * closed automatically, making the following
-     * calls accidentally close the already re-opened
-     * descriptors while they are in use by another
-     * session process.
-     *
-     * Commented the close() calls out. FIXME.
-     */
-    //close (self->priv->to_child_input);
-    //close (self->priv->from_child_output);
-    
+    close (self->priv->to_child_input);
+    close (self->priv->from_child_output);
     if (self->priv->from_child_channel)
         g_io_channel_unref (self->priv->from_child_channel);
     if (self->priv->from_child_watch)
