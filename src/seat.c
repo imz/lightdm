@@ -1496,7 +1496,7 @@ switch_authentication_complete_cb (Session *session, Seat *seat)
     session_stop (session);
 
     /* See if we already have a greeter up and reuse it if so */
-    greeter_session = find_resettable_greeter (seat);
+    greeter_session = find_greeter_session (seat);
     if (greeter_session)
     {
         l_debug (seat, "Switching to existing greeter to authenticate session");
