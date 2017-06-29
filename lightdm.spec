@@ -6,7 +6,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt3
+Release: alt2.M80P.1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -244,6 +244,9 @@ fi
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Thu Jun 29 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt2.M80P.1
+- Build for p8 branch.
+
 * Thu Jun 22 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt3
 - When is switching to the greeter, unconditionally use an existing
   one, if any, trying to reset it to the new user name.
