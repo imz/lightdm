@@ -130,7 +130,8 @@ GObject introspection devel data for the %name
 	--with-user-session=default \
 	--libexecdir=%_libexecdir \
 	--with-greeter-user=_ldm \
-	--with-greeter-session=%name-default-greeter
+	--with-greeter-session=%name-default-greeter \
+	CXXFLAGS=-std=c++11
 
 %make_build
 
@@ -250,7 +251,7 @@ fi
 
 %changelog
 * Fri Jul 21 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt4.M80P.1
-- Build for p8 branch.
+- Build for p8 branch. Build with CXXFLAGS=-std=c++11.
 
 * Fri Jul 21 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt5
 - Added control script 'lightdm-login-unknown'.
