@@ -1,0 +1,78 @@
+#!/bin/sh
+
+. /etc/control.d/functions
+. /bin/shell-ini-config
+shell_ini_config_prefix=''
+
+CONFIG=/etc/lightdm/lightdm.conf
+PAM_CONFIG=/etc/pam.d/lightdm
+
+new_summary "Login of unknown users through LightDM"
+new_help 'enabled' "Unknown users are allowed to login"
+new_help 'disabled' "Unknown users are blocked from login"
+
+pam_shells_get() {
+    sed -n -e 's/^auth[[:space:]]\+\([^[:space:]]\+\)[[:space:]]\+pam_shells\.so\([[:space:]]\+.*\)\?$/\1/p' "$PAM_CONFIG"
+}
+
+pam_shells_set() {
+    sed -i -e "s/^auth[[:space:]]\\+[^[:space:]]\\+[[:space:]]\\+pam_shells\\.so\\([[:space:]]\\+.*\\)\\?\$/auth\\t\\t$1\\tpam_shells.so\\1/" "$PAM_CONFIG"
+}
+
+pam_succeed_if_get() {
+    sed -n -e 's/^auth[[:space:]]\+\([^[:space:]]\+\)[[:space:]]\+pam_succeed_if\.so\([[:space:]]\+.*\)\?[[:space:]]\+uid[[:space:]]\+ne[[:space:]]\+0\([[:space:]]\+.*\)\?$/\1/p' "$PAM_CONFIG"
+}
+
+pam_succeed_if_set() {
+    sed -i -e "s/^auth[[:space:]]\\+[^[:space:]]\\+[[:space:]]\\+pam_succeed_if\\.so\\([[:space:]]\\+.*\\)\\?[[:space:]]\\+uid[[:space:]]\\+ne[[:space:]]\\+0\\([[:space:]]\\+.*\\)\\?\$/auth\\t\\t$1\\tpam_succeed_if.so\\1 uid ne 0\\2/" "$PAM_CONFIG"
+}
+
+
+REQUEST="$*"
+
+case "$REQUEST" in
+	help|'help '*)
+		control_help "${REQUEST#help}"
+		;;
+	list)
+		control_list
+		;;
+	summary)
+		control_summary
+		;;
+	status)        
+		CURRENT="$(ini_config_get "$CONFIG" 'LightDM' 'login-unknown')"
+        case "$CURRENT" in
+            [Tt][Rr][Uu][Ee])
+                case "$(pam_shells_get) $(pam_succeed_if_get)" in
+                    optional\ optional)
+		                echo 'enabled'
+                        ;;
+                    *)
+                        echo 'misconfigured'
+                        ;;
+                esac
+                ;;
+            *)
+                case "$(pam_shells_get) $(pam_succeed_if_get)" in
+                    required\ required)
+                        echo 'disabled'
+                        ;;
+                    *)
+                        echo 'misconfigured'
+                        ;;
+                esac
+                ;;
+        esac
+		;;
+	enabled)
+        ini_config_set "$CONFIG" 'LightDM' 'login-unknown' 'true'
+        pam_shells_set     'optional'
+        pam_succeed_if_set 'optional'
+		;;
+	disabled)
+        ini_config_set "$CONFIG" 'LightDM' 'login-unknown' 'false'
+        pam_shells_set     'required'
+        pam_succeed_if_set 'required'
+		;;
+esac

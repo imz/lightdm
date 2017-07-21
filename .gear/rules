@@ -7,3 +7,4 @@ copy: *.sh
 copy: *.conf
 copy: *.rules
 copy: *.service
+copy: *.control
