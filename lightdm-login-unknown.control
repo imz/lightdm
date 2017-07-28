@@ -7,6 +7,9 @@ shell_ini_config_prefix=''
 CONFIG=/etc/lightdm/lightdm.conf
 PAM_CONFIG=/etc/pam.d/lightdm
 
+# Resolve the links because sed -i replaces the files
+PAM_CONFIG="$(realpath "$PAM_CONFIG")"
+
 new_summary "Login of unknown users through LightDM"
 new_help 'enabled' "Unknown users are allowed to login"
 new_help 'disabled' "Unknown users are blocked from login"
