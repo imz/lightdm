@@ -6,7 +6,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt4.M80P.1
+Release: alt5.M80P.1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -250,6 +250,9 @@ fi
 %_datadir/gtk-doc/html/*
 
 %changelog
+* Fri Jul 28 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt5.M80P.1
+- Build v1.16.7-alt6 for the P8 branch.
+
 * Fri Jul 28 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt6
 - Fix the control script: Resolve the links because sed -i replaces
   the files.
