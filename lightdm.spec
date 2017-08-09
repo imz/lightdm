@@ -266,6 +266,9 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Wed Aug 09 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt6.M80P.1
+- Build v1.16.7-alt7 for the P8 branch.
+
 * Tue Aug 08 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt7
 - Extract the "dm-tool" utility into a separate package.
 
