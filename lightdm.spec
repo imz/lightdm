@@ -26,6 +26,7 @@ Source9: %name.service
 Source10: %name-login-unknown.control
 
 Patch1: %name-%version-%release.patch
+Patch2: %name-%version-%release-advanced.patch
 
 # Requires: %name-greeter
 # Requires: accountsservice
@@ -128,6 +129,8 @@ manager via D-Bus.
 %prep
 %setup
 %patch1 -p1
+%patch2 -p1
+
 %ifarch e2k
 sed -i 's,-Werror=pointer-arith,,' configure.ac
 %endif

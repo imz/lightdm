@@ -1,5 +1,6 @@
 tar: @version@:.
 diff: @version@:. patches/alt-fixes:.
+diff: patches/alt-fixes:. patches/advanced:. name=@name@-@version@-@release@-advanced.patch
 copy: *.pam
 copy: *.patch
 copy: *.wms
