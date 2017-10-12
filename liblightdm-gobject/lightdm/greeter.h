@@ -151,6 +151,8 @@ gchar *lightdm_greeter_ensure_shared_data_dir_finish (LightDMGreeter *greeter, G
 
 gchar *lightdm_greeter_ensure_shared_data_dir_sync (LightDMGreeter *greeter, const gchar *username);
 
+void lightdm_greeter_change_pass (LightDMGreeter *greeter, const gchar *username, gboolean reset);
+
 G_END_DECLS
 
 #endif /* LIGHTDM_GREETER_H_ */
