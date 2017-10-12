@@ -718,6 +718,8 @@ handle_ensure_shared_dir (Greeter *greeter, const gchar *username)
 static void
 handle_change_pass (Greeter *greeter, guint32 sequence_number, const gchar *username, gboolean reset)
 {
+    const gchar *service;
+    
     if (username[0] == '\0')
     {
         l_debug (greeter, "Greeter start password %s", reset ? "reset" : "change");
