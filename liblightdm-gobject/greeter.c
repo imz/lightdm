@@ -1620,10 +1620,10 @@ lightdm_greeter_change_pass (LightDMGreeter *greeter, const gchar *username, gbo
     else
         g_debug ("Starting password change for user %s...", username);
     
-    write_header (message, MAX_MESSAGE_LENGTH, GREETER_MESSAGE_AUTHENTICATE, int_length () + string_length (username), &offset);
+    write_header (message, MAX_MESSAGE_LENGTH, GREETER_MESSAGE_CHANGE_PASS, int_length () + string_length (username) + int_length (), &offset);
     write_int (message, MAX_MESSAGE_LENGTH, priv->authenticate_sequence_number, &offset);
     write_string (message, MAX_MESSAGE_LENGTH, username, &offset);
-    write_int (message, MAX_MESSAGE_LENGTH, reset, &offset);
+    write_int (message, MAX_MESSAGE_LENGTH, reset ? 1 : 0, &offset);
     send_message (greeter, message, offset);
 }
 
