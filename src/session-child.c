@@ -40,6 +40,8 @@ static int to_daemon_input = 0;
 
 static gboolean is_interactive;
 static gboolean do_authenticate;
+static gboolean do_change_pass;
+static gboolean reset_pass;
 static gboolean authentication_complete = FALSE;
 static pam_handle_t *pam_handle;
 
@@ -345,6 +347,8 @@ session_child_run (int argc, char **argv)
     service = read_string ();
     username = read_string ();
     read_data (&do_authenticate, sizeof (do_authenticate));
+    read_data (&do_change_pass, sizeof (do_change_pass));
+    read_data (&reset_pass, sizeof (reset_pass));
     read_data (&is_interactive, sizeof (is_interactive));
     read_string (); /* Used to be class, now we just use the environment variable */
     tty = read_string ();
@@ -435,6 +439,24 @@ session_child_run (int argc, char **argv)
             authentication_result = pam_acct_mgmt (pam_handle, 0);
         if (authentication_result == PAM_NEW_AUTHTOK_REQD)
             authentication_result = pam_chauthtok (pam_handle, PAM_CHANGE_EXPIRED_AUTHTOK);
+    }
+    else if (do_change_pass)
+    {    
+        authentication_result = pam_chauthtok (pam_handle, 0);
+
+        /* Close the session */
+        pam_close_session (pam_handle, 0);
+
+        /* Remove credentials */
+        pam_setcred (pam_handle, PAM_DELETE_CRED);
+
+        pam_end (pam_handle, 0);
+        pam_handle = NULL;
+        
+        if (authentication_result == PAM_SUCCESS)
+            return EXIT_SUCCESS;
+        else
+            return EXIT_FAILURE;
     }
     else
         authentication_result = PAM_SUCCESS;

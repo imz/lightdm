@@ -107,6 +107,7 @@ typedef enum
     GREETER_MESSAGE_SET_LANGUAGE,
     GREETER_MESSAGE_AUTHENTICATE_REMOTE,
     GREETER_MESSAGE_ENSURE_SHARED_DIR,
+    GREETER_MESSAGE_CHANGE_PASS,
 } GreeterMessage;
 
 /* Messages from the server to the greeter */
@@ -1581,6 +1582,49 @@ lightdm_greeter_ensure_shared_data_dir_sync (LightDMGreeter *greeter, const gcha
     g_object_unref (request);
 
     return data_dir;
+}
+
+/**
+ * lightdm_greeter_change_pass:
+ * @greeter: A #LightDMGreeter
+ * @username: (allow-none): A username or #NULL to prompt for a username.
+ * @reset: Reset pass flag (usually will require administrative priv.).
+ *
+ * Starts the password change (or password reset) procedure for a user.
+ **/
+void
+lightdm_greeter_change_pass (LightDMGreeter *greeter, const gchar *username, gboolean reset)
+{
+    LightDMGreeterPrivate *priv;
+    guint8 message[MAX_MESSAGE_LENGTH];
+    gsize offset = 0;
+
+    g_return_if_fail (LIGHTDM_IS_GREETER (greeter));
+
+    priv = GET_PRIVATE (greeter);
+
+    g_return_if_fail (priv->connected);
+
+    priv->cancelling_authentication = FALSE;
+    priv->authenticate_sequence_number++;
+    priv->in_authentication = TRUE;
+    priv->is_authenticated = FALSE;
+    if (username != priv->authentication_user)
+    {
+        g_free (priv->authentication_user);
+        priv->authentication_user = g_strdup (username);
+    }
+
+    if ( reset )
+        g_debug ("Starting password reset for user %s...", username);
+    else
+        g_debug ("Starting password change for user %s...", username);
+    
+    write_header (message, MAX_MESSAGE_LENGTH, GREETER_MESSAGE_AUTHENTICATE, int_length () + string_length (username), &offset);
+    write_int (message, MAX_MESSAGE_LENGTH, priv->authenticate_sequence_number, &offset);
+    write_string (message, MAX_MESSAGE_LENGTH, username, &offset);
+    write_int (message, MAX_MESSAGE_LENGTH, reset, &offset);
+    send_message (greeter, message, offset);
 }
 
 static void

@@ -97,6 +97,7 @@ typedef enum
     GREETER_MESSAGE_SET_LANGUAGE,
     GREETER_MESSAGE_AUTHENTICATE_REMOTE,
     GREETER_MESSAGE_ENSURE_SHARED_DIR,
+    GREETER_MESSAGE_CHANGE_PASS,
 } GreeterMessage;
 
 /* Messages from the server to the greeter */
@@ -714,6 +715,45 @@ handle_ensure_shared_dir (Greeter *greeter, const gchar *username)
     g_free (dir);
 }
 
+static void
+handle_change_pass (Greeter *greeter, guint32 sequence_number, const gchar *username, gboolean reset)
+{
+    if (username[0] == '\0')
+    {
+        l_debug (greeter, "Greeter start password %s", reset ? "reset" : "change");
+        username = NULL;
+    }
+    else
+        l_debug (greeter, "Greeter start password %s for %s", reset ? "reset" : "change", username);
+
+    reset_session (greeter);
+
+    if (greeter->priv->active_username)
+        g_free (greeter->priv->active_username);
+    greeter->priv->active_username = g_strdup (username);
+    g_object_notify (G_OBJECT (greeter), GREETER_PROPERTY_ACTIVE_USERNAME);
+
+    greeter->priv->authentication_sequence_number = sequence_number;
+    g_signal_emit (greeter, signals[CREATE_SESSION], 0, &greeter->priv->authentication_session);
+    if (!greeter->priv->authentication_session)
+    {
+        send_end_authentication (greeter, sequence_number, "", PAM_USER_UNKNOWN);
+        return;
+    }
+
+    g_signal_connect (G_OBJECT (greeter->priv->authentication_session), SESSION_SIGNAL_GOT_MESSAGES, G_CALLBACK (pam_messages_cb), greeter);
+    g_signal_connect (G_OBJECT (greeter->priv->authentication_session), SESSION_SIGNAL_AUTHENTICATION_COMPLETE, G_CALLBACK (authentication_complete_cb), greeter);
+
+    service = greeter->priv->pam_service;
+    
+    /* Run the session process */
+    session_set_pam_service (greeter->priv->authentication_session, service);
+    session_set_username (greeter->priv->authentication_session, username);
+    session_set_do_change_pass (greeter->priv->authentication_session, TRUE, reset);
+    session_set_is_interactive (greeter->priv->authentication_session, TRUE);
+    session_start (greeter->priv->authentication_session);
+}
+
 static guint32
 read_int (Greeter *greeter, gsize *offset)
 {
@@ -904,6 +944,15 @@ read_cb (GIOChannel *source, GIOCondition condition, gpointer data)
     case GREETER_MESSAGE_ENSURE_SHARED_DIR:
         username = read_string (greeter, &offset);
         handle_ensure_shared_dir (greeter, username);
+        g_free (username);
+        break;
+    case GREETER_MESSAGE_CHANGE_PASS:
+        sequence_number = read_int (greeter, &offset);
+        username = read_string (greeter, &offset);
+        gboolean reset = FALSE;
+        if (offset < length)
+            reset = read_int (greeter, &offset) != 0;
+        handle_change_pass (greeter, sequence_number, username, reset);
         g_free (username);
         break;
     default:

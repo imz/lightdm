@@ -69,6 +69,12 @@ struct SessionPrivate
     /* TRUE if should run PAM authentication phase */
     gboolean do_authenticate;
 
+    /* TRUE if should run PAM chauthtok phase */
+    gboolean do_change_pass;
+
+    /* TRUE if should reset the authtok */
+    gboolean reset_pass;
+
     /* TRUE if can handle PAM prompts */
     gboolean is_interactive;
 
@@ -176,6 +182,14 @@ session_set_do_authenticate (Session *session, gboolean do_authenticate)
 {
     g_return_if_fail (session != NULL);
     session->priv->do_authenticate = do_authenticate;
+}
+
+void
+session_set_do_change_pass (Session *session, gboolean do_change, gboolean reset)
+{
+    g_return_if_fail (session != NULL);
+    session->priv->do_change_pass = do_change;
+    session->priv->reset_pass = reset;
 }
 
 void
@@ -635,6 +649,8 @@ session_real_start (Session *session)
     write_string (session, session->priv->pam_service);
     write_string (session, session->priv->username);
     write_data (session, &session->priv->do_authenticate, sizeof (session->priv->do_authenticate));
+    write_data (session, &session->priv->do_change_pass, sizeof (session->priv->do_change_pass));
+    write_data (session, &session->priv->reset_pass, sizeof (session->priv->reset_pass));
     write_data (session, &session->priv->is_interactive, sizeof (session->priv->is_interactive));
     write_string (session, NULL); /* Used to be class, now we just use the environment variable */
     write_string (session, session->priv->tty);

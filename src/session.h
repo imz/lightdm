@@ -79,6 +79,8 @@ void session_set_username (Session *session, const gchar *username);
 
 void session_set_do_authenticate (Session *session, gboolean do_authenticate);
 
+void session_set_do_change_pass (Session *session, gboolean do_change, gboolean reset);
+
 void session_set_is_interactive (Session *session, gboolean is_interactive);
 
 void session_set_is_guest (Session *session, gboolean is_guest);
