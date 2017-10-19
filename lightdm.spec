@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt10
+Release: alt11
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -277,6 +277,10 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Thu Oct 19 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt11
+- Added 'lightdm_greeter_change_pass()' and 'CHANGE_PASS' greeter
+  message.
+
 * Wed Oct 04 2017 Michael Shigorin <mike@altlinux.org> 1.16.7-alt10
 - reverted last change, not needed anymore
 
