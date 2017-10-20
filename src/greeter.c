@@ -63,6 +63,9 @@ struct GreeterPrivate
     /* PAM session being constructed by the greeter */
     Session *authentication_session;
 
+    /* TRUE if the PAM session is being cancelled */
+    gboolean cancelling;
+
     /* TRUE if a the greeter can handle a reset; else we will just kill it instead */
     gboolean resettable;
 
@@ -382,6 +385,22 @@ greeter_reset (Greeter *greeter)
 }
 
 static void
+reset_session (Greeter *greeter)
+{
+    g_free (greeter->priv->remote_session);
+    greeter->priv->remote_session = NULL;
+    if (greeter->priv->authentication_session)
+    {
+        g_signal_handlers_disconnect_matched (greeter->priv->authentication_session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, greeter);
+        session_stop (greeter->priv->authentication_session);
+        g_object_unref (greeter->priv->authentication_session);
+        greeter->priv->authentication_session = NULL;
+    }
+
+    greeter->priv->guest_account_authenticated = FALSE;
+}
+
+static void
 authentication_complete_cb (Session *session, Greeter *greeter)
 {
     int result;
@@ -400,23 +419,10 @@ authentication_complete_cb (Session *session, Greeter *greeter)
         }
     }
 
+    if (greeter->priv->cancelling)
+        reset_session (greeter);
+
     send_end_authentication (greeter, greeter->priv->authentication_sequence_number, session_get_username (session), result);
-}
-
-static void
-reset_session (Greeter *greeter)
-{
-    g_free (greeter->priv->remote_session);
-    greeter->priv->remote_session = NULL;
-    if (greeter->priv->authentication_session)
-    {
-        g_signal_handlers_disconnect_matched (greeter->priv->authentication_session, G_SIGNAL_MATCH_DATA, 0, 0, NULL, NULL, greeter);
-        session_stop (greeter->priv->authentication_session);
-        g_object_unref (greeter->priv->authentication_session);
-        greeter->priv->authentication_session = NULL;
-    }
-
-    greeter->priv->guest_account_authenticated = FALSE;
 }
 
 static void
@@ -632,7 +638,8 @@ handle_cancel_authentication (Greeter *greeter)
         return;
 
     l_debug (greeter, "Cancel authentication");
-    reset_session (greeter);
+    greeter->priv->cancelling = TRUE;
+    session_stop (greeter->priv->authentication_session);
 }
 
 static void
