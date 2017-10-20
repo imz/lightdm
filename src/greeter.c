@@ -398,6 +398,7 @@ reset_session (Greeter *greeter)
     }
 
     greeter->priv->guest_account_authenticated = FALSE;
+    greeter->priv->cancelling = FALSE;
 }
 
 static void
@@ -421,6 +422,8 @@ authentication_complete_cb (Session *session, Greeter *greeter)
 
     if (greeter->priv->cancelling)
         reset_session (greeter);
+    else
+        greeter->priv->cancelling = FALSE;
 
     send_end_authentication (greeter, greeter->priv->authentication_sequence_number, session_get_username (session), result);
 }
@@ -1045,6 +1048,7 @@ greeter_init (Greeter *greeter)
     greeter->priv->use_secure_memory = config_get_boolean (config_get_instance (), "LightDM", "lock-memory");
     greeter->priv->to_greeter_input = -1;
     greeter->priv->from_greeter_output = -1;
+    greeter->priv->cancelling = FALSE;
 }
 
 static void
