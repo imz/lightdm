@@ -133,6 +133,8 @@ void lightdm_greeter_cancel_authentication (LightDMGreeter *greeter);
 
 gboolean lightdm_greeter_get_in_authentication (LightDMGreeter *greeter);
 
+gboolean lightdm_greeter_get_in_chauthtok (LightDMGreeter *greeter);
+
 gboolean lightdm_greeter_get_is_authenticated (LightDMGreeter *greeter);
 
 const gchar *lightdm_greeter_get_authentication_user (LightDMGreeter *greeter);
