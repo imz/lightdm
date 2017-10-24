@@ -31,6 +31,7 @@ enum {
     PROP_AUTOLOGIN_TIMEOUT_HINT,
     PROP_AUTHENTICATION_USER,
     PROP_IN_AUTHENTICATION,
+    PROP_IN_CHAUTHTOK,
     PROP_IS_AUTHENTICATED,
 };
 
@@ -83,6 +84,7 @@ typedef struct
 
     gchar *authentication_user;
     gboolean in_authentication;
+    gboolean in_chauthtok;
     gboolean is_authenticated;
     guint32 authenticate_sequence_number;
     gboolean cancelling_authentication;
@@ -542,6 +544,7 @@ handle_end_authentication (LightDMGreeter *greeter, guint8 *message, gsize messa
     priv->is_authenticated = (return_code == 0);
 
     priv->in_authentication = FALSE;
+    priv->in_chauthtok = FALSE;
     g_signal_emit (G_OBJECT (greeter), signals[AUTHENTICATION_COMPLETE], 0);
 }
 
@@ -1145,6 +1148,7 @@ lightdm_greeter_authenticate (LightDMGreeter *greeter, const gchar *username)
     priv->cancelling_authentication = FALSE;
     priv->authenticate_sequence_number++;
     priv->in_authentication = TRUE;
+    priv->in_chauthtok = FALSE;
     priv->is_authenticated = FALSE;
     if (username != priv->authentication_user)
     {
@@ -1181,6 +1185,7 @@ lightdm_greeter_authenticate_as_guest (LightDMGreeter *greeter)
     priv->cancelling_authentication = FALSE;
     priv->authenticate_sequence_number++;
     priv->in_authentication = TRUE;
+    priv->in_chauthtok = FALSE;
     priv->is_authenticated = FALSE;
     g_free (priv->authentication_user);
     priv->authentication_user = NULL;
@@ -1233,6 +1238,7 @@ lightdm_greeter_authenticate_remote (LightDMGreeter *greeter, const gchar *sessi
     priv->cancelling_authentication = FALSE;
     priv->authenticate_sequence_number++;
     priv->in_authentication = TRUE;
+    priv->in_chauthtok = FALSE;
     priv->is_authenticated = FALSE;
     g_free (priv->authentication_user);
     priv->authentication_user = NULL;
@@ -1332,6 +1338,23 @@ lightdm_greeter_get_in_authentication (LightDMGreeter *greeter)
 {
     g_return_val_if_fail (LIGHTDM_IS_GREETER (greeter), FALSE);
     return GET_PRIVATE (greeter)->in_authentication;
+}
+
+/**
+ * lightdm_greeter_get_in_chauthtok:
+ * @greeter: A #LightDMGreeter
+ *
+ * Checks if the greeter is in the process of changing an
+ * authentication token.
+ *
+ * Return value: #TRUE if the greeter is changing an authentication
+ * token.
+ **/
+gboolean
+lightdm_greeter_get_in_chauthtok (LightDMGreeter *greeter)
+{
+    g_return_val_if_fail (LIGHTDM_IS_GREETER (greeter), FALSE);
+    return GET_PRIVATE (greeter)->in_chauthtok;
 }
 
 /**
@@ -1608,6 +1631,7 @@ lightdm_greeter_change_pass (LightDMGreeter *greeter, const gchar *username, gbo
     priv->cancelling_authentication = FALSE;
     priv->authenticate_sequence_number++;
     priv->in_authentication = TRUE;
+    priv->in_chauthtok = TRUE;
     priv->is_authenticated = FALSE;
     if (username != priv->authentication_user)
     {
@@ -1724,6 +1748,9 @@ lightdm_greeter_get_property (GObject    *object,
         break;
     case PROP_IN_AUTHENTICATION:
         g_value_set_boolean (value, lightdm_greeter_get_in_authentication (self));
+        break;
+    case PROP_IN_CHAUTHTOK:
+        g_value_set_boolean (value, lightdm_greeter_get_in_chauthtok (self));
         break;
     case PROP_IS_AUTHENTICATED:
         g_value_set_boolean (value, lightdm_greeter_get_is_authenticated (self));
@@ -1861,6 +1888,13 @@ lightdm_greeter_class_init (LightDMGreeterClass *klass)
                                      g_param_spec_boolean ("in-authentication",
                                                            "in-authentication",
                                                            "TRUE if a user is being authenticated",
+                                                           FALSE,
+                                                           G_PARAM_READABLE));
+    g_object_class_install_property (object_class,
+                                     PROP_IN_CHAUTHTOK,
+                                     g_param_spec_boolean ("in-chauthtok",
+                                                           "in-chauthtok",
+                                                           "TRUE if a user is changing an authentication token",
                                                            FALSE,
                                                            G_PARAM_READABLE));
     g_object_class_install_property (object_class,
