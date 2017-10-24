@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt11
+Release: alt12
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -277,6 +277,15 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Tue Oct 24 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt12
+- Support the 'reset' argument of the CHANGE_PASS message. Use
+  "reset-pass-envvar" configuration parameter to set the environment
+  variable or set "PAM_RESET_AUTHTOK=1" by default.
+- Add "in_chauthtok" property.
+- Fix: Clean the 'cancelling' state when the session is complete.
+- Fix: Don\'t disconnect signals on cancel before the session
+  actually ends.
+
 * Thu Oct 19 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt11
 - Added 'lightdm_greeter_change_pass()' and 'CHANGE_PASS' greeter
   message.
