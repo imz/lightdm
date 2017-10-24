@@ -441,7 +441,12 @@ session_child_run (int argc, char **argv)
             authentication_result = pam_chauthtok (pam_handle, PAM_CHANGE_EXPIRED_AUTHTOK);
     }
     else if (do_change_pass)
-    {    
+    {
+        if (reset_pass)
+        {
+            const gchar *reset_pass_envvar = config_get_string (config_get_instance (), "LightDM", "reset-pass-envvar");
+            pam_putenv (pam_handle, reset_pass_envvar ? reset_pass_envvar : "PAM_RESET_AUTHTOK=1");
+        }
         authentication_result = pam_chauthtok (pam_handle, 0);
 
         /* Close the session */
