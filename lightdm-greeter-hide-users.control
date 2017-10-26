@@ -1,0 +1,76 @@
+#!/bin/sh
+
+. /etc/control.d/functions
+. /bin/shell-ini-config
+shell_ini_config_prefix=''
+
+CONFIG=/etc/lightdm/lightdm.conf
+
+SUMMARY="${SUMMARY:-Show or hide the list of known users in the greeter}"
+
+ON_NAME="${ON_NAME:-hide}"
+ON_HELP="${ON_HELP:-Hide the user list}"
+ON_HOOK="${ON_HOOK:-}"
+ON_TEST="${ON_TEST:-}"
+
+OFF_NAME="${ON_NAME:-show}"
+OFF_HELP="${ON_HELP:-Show the user list}"
+OFF_HOOK="${OFF_HOOK:-}"
+OFF_TEST="${OFF_TEST:-}"
+
+SECTION="${SECTION:-[Seat:*]}"
+VARNAME="${VARNAME:-greeter-hide-users}"
+
+new_summary "$SUMMARY"
+new_help "$OFF_NAME" "$OFF_HELP"
+new_help "$ON_NAME" "$ON_HELP"
+
+REQUEST="$*"
+
+case "$REQUEST" in
+	help|'help '*)
+		control_help "${REQUEST#help}"
+		;;
+	list)
+		control_list
+		;;
+	summary)
+		control_summary
+		;;
+	status)
+		CURRENT="$(ini_config_get "$CONFIG" "$SECTION" "$VARNAME")"
+        case "$CURRENT" in
+            [Tt][Rr][Uu][Ee])
+                if [ -n "$ON_TEST" ]; then
+                    if _ret="$("$ON_TEST" "$CURRENT")"; then
+		                echo "$ON_NAME"
+                    else
+                        echo "${_ret:-misconfigured}"
+                    fi
+                else
+                    echo "$ON_NAME"
+                fi
+                ;;
+            *)
+                if [ -n "$OFF_TEST" ]; then
+                    if _ret="$("$OFF_TEST" "$CURRENT")"; then
+		                echo "$OFF_NAME"
+                    else
+                        echo "${_ret:-misconfigured}"
+                    fi
+                else
+                    echo "$OFF_NAME"
+                fi
+                ;;
+        esac
+        ;;
+	*)
+        if [ "$REQUEST" = "$ON_NAME" ]; then
+            ini_config_set "$CONFIG" "$SECTION" "$VARNAME" 'true'
+            [ -z "$ON_HOOK" ] || "$ON_HOOK" "$@"
+        elif [ "$REQUEST" = "$OFF_NAME" ]; then
+            ini_config_set "$CONFIG" "$SECTION" "$VARNAME" 'false'
+            [ -z "$OFF_HOOK" ] || "$OFF_HOOK" "$@"
+        fi
+		;;
+esac
