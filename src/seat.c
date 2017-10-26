@@ -1548,6 +1548,9 @@ seat_switch_to_user (Seat *seat, const gchar *username, const gchar *session_nam
     if (!username || !*username)
         username = seat_get_string_property (seat, "default-username");
 
+    if (!username || !*username)
+        username = config_get_string (config_get_instance (), "LightDM", "default-username");
+    
     g_return_val_if_fail (username != NULL, FALSE);
 
     if (!seat_get_can_switch (seat))
