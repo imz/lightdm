@@ -46,7 +46,6 @@ test_pam_off() {
             return 1
             ;;
     esac
-    ;;
 }
 
 set_pam_off() {
