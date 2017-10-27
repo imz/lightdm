@@ -31,13 +31,7 @@ G_BEGIN_DECLS
 #define SEAT_SIGNAL_SESSION_REMOVED      "session-removed"
 #define SEAT_SIGNAL_STOPPED              "stopped"
 
-typedef struct SeatPrivate SeatPrivate;
-
-typedef struct
-{
-    GObject      parent_instance;
-    SeatPrivate *priv;
-} Seat;
+#include "seat-type.h"
 
 typedef struct
 {

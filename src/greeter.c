@@ -18,6 +18,7 @@
 #include <gcrypt.h>
 
 #include "greeter.h"
+#include "seat.h"
 #include "configuration.h"
 #include "shared-data-manager.h"
 
@@ -84,6 +85,9 @@ struct GreeterPrivate
     GIOChannel *to_greeter_channel;
     GIOChannel *from_greeter_channel;
     guint from_greeter_watch;
+
+    /* The seat this greeter is running on */
+    Seat *seat;
 };
 
 G_DEFINE_TYPE (Greeter, greeter, SESSION_TYPE);
@@ -118,9 +122,11 @@ typedef enum
 static gboolean read_cb (GIOChannel *source, GIOCondition condition, gpointer data);
 
 Greeter *
-greeter_new (void)
+greeter_new (Seat *seat)
 {
-    return g_object_new (GREETER_TYPE, NULL);
+    Greeter *greeter = g_object_new (GREETER_TYPE, NULL);
+    greeter->priv->seat = seat;
+    return greeter;
 }
 
 void
@@ -435,10 +441,12 @@ handle_login (Greeter *greeter, guint32 sequence_number, const gchar *username)
     const gchar *autologin_username, *service;
     gboolean is_interactive;
 
-    if (username[0] == '\0')
+    if (!username || username[0] == '\0')
     {
+        username = seat_get_string_property (greeter->priv->seat, "default-username");
+        if (!username || !*username)
+            username = config_get_string (config_get_instance (), "LightDM", "default-username");
         l_debug (greeter, "Greeter start authentication");
-        username = NULL;
     }
     else
         l_debug (greeter, "Greeter start authentication for %s", username);

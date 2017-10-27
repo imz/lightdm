@@ -1808,7 +1808,7 @@ seat_real_start (Seat *seat)
 static Greeter *
 seat_real_create_greeter_session (Seat *seat)
 {
-    return greeter_new ();
+    return greeter_new (seat);
 }
 
 static Session *
