@@ -24,6 +24,7 @@ Source7: %name-greeter.pam
 Source8: %name.rules
 Source9: %name.service
 Source10: %name-login-unknown.control
+Source11: %name-greeter-hide-users.control
 
 Patch1: %name-%version-%release.patch
 Patch2: %name-%version-%release-advanced.patch
@@ -192,6 +193,7 @@ install -m644 -p -D %SOURCE9 %buildroot%_unitdir/%name.service
 echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_environment
 
 install -m0755 -p -D %SOURCE10 %buildroot%_controldir/%name-login-unknown
+install -m0755 -p -D %SOURCE11 %buildroot%_controldir/%name-greeter-hide-users.control
 
 %find_lang --with-gnome %name
 
