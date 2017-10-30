@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt12
+Release: alt13
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -279,6 +279,15 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Mon Oct 30 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt13
+- Make use of 'default-username' when starting new login session.
+- Fixed syntax in lightdm-login-unknown.control.
+- Add 'default-username' to the global config too.
+- Add 'default-username' seat property.
+- Lookup 'login-unknown' first in the seat configuration, then in
+  the global section.
+- Added control for 'greeter-hide-users' configuration parameter.
+  
 * Tue Oct 24 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt12
 - Support the 'reset' argument of the CHANGE_PASS message. Use
   "reset-pass-envvar" configuration parameter to set the environment
