@@ -1500,6 +1500,12 @@ switch_authentication_complete_cb (Session *session, Seat *seat)
         return;
     }
 
+    /* Don't try to query session values after stop,
+     * because they can already be freed.
+     */
+    gboolean is_guest = session_get_is_guest (session);
+    const gchar *username = g_strdup (session_get_username (session));
+    
     session_stop (session);
 
     /* See if we already have a greeter up and reuse it if so */
@@ -1516,10 +1522,10 @@ switch_authentication_complete_cb (Session *session, Seat *seat)
         greeter_session = create_greeter_session (seat);
     }
 
-    if (session_get_is_guest (session))
+    if (is_guest)
         greeter_set_hint (greeter_session, "select-guest", "true");
     else
-        greeter_set_hint (greeter_session, "select-user", session_get_username (session));
+        greeter_set_hint (greeter_session, "select-user", username);
 
     if (existing)
     {
@@ -1536,6 +1542,8 @@ switch_authentication_complete_cb (Session *session, Seat *seat)
         session_set_display_server (SESSION (greeter_session), display_server);
         display_server_start (display_server);
     }
+
+    g_free (username);
 }
 
 gboolean
@@ -1565,10 +1573,21 @@ seat_switch_to_user (Seat *seat, const gchar *username, const gchar *session_nam
 
     /* Attempt to authenticate them */
     session = create_user_session (seat, username, FALSE);
-    g_signal_connect (session, SESSION_SIGNAL_AUTHENTICATION_COMPLETE, G_CALLBACK (switch_authentication_complete_cb), seat);
-    session_set_pam_service (session, seat_get_string_property (seat, "pam-service"));
 
-    return session_start (session);
+    /* The attempt to authenticate a user WITHOUT a greeter
+     * seems to be odd.
+     *
+     * //g_signal_connect (session, SESSION_SIGNAL_AUTHENTICATION_COMPLETE, G_CALLBACK (switch_authentication_complete_cb), seat);
+     */
+    session_set_pam_service (session, seat_get_string_property (seat, "pam-service"));
+    /* Instead of trying to authenticate, run the callback directly.
+     */
+    switch_authentication_complete_cb (session, seat);
+    return TRUE;
+
+    /*
+     * //return session_start (session);
+     */
 }
 
 static Session *
