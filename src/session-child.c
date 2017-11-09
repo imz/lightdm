@@ -448,6 +448,7 @@ session_child_run (int argc, char **argv)
             pam_putenv (pam_handle, reset_pass_envvar ? reset_pass_envvar : "PAM_RESET_AUTHTOK=1");
         }
         authentication_result = pam_chauthtok (pam_handle, 0);
+        authentication_result_string = g_strdup (pam_strerror (pam_handle, authentication_result));
 
         /* Close the session */
         pam_close_session (pam_handle, 0);
@@ -457,6 +458,14 @@ session_child_run (int argc, char **argv)
 
         pam_end (pam_handle, 0);
         pam_handle = NULL;
+
+        authentication_complete = TRUE;
+
+        /* Report authentication result */
+        write_string (username);
+        write_data (&auth_complete, sizeof (auth_complete));
+        write_data (&authentication_result, sizeof (authentication_result));
+        write_string (authentication_result_string);
         
         if (authentication_result == PAM_SUCCESS)
             return EXIT_SUCCESS;
@@ -465,6 +474,7 @@ session_child_run (int argc, char **argv)
     }
     else
         authentication_result = PAM_SUCCESS;
+    
     authentication_complete = TRUE;
 
     if (authentication_result == PAM_SUCCESS)
