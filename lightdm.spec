@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt14
+Release: alt16
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -279,6 +279,10 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Thu Nov 09 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt16
+- Fix: Properly report the PAM result before exit the password
+  change session.
+
 * Tue Oct 31 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt14
 - Fix: Don\'t try to authenticate a user without using a greeter
   on switch-to-user.
