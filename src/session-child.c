@@ -13,6 +13,7 @@
 #include <grp.h>
 #include <glib.h>
 #include <security/pam_appl.h>
+#include <locale.h>
 #include <utmp.h>
 #include <utmpx.h>
 #include <sys/mman.h>
@@ -302,6 +303,8 @@ session_child_run (int argc, char **argv)
     uid_t uid;
     const gchar *home_directory;
     GError *error = NULL;
+
+    setlocale(LC_ALL, ""); /* to translate PAM messages */
 
 #if !defined(GLIB_VERSION_2_36)
     g_type_init ();
