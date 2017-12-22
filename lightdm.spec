@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt16
+Release: alt17
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -288,6 +288,10 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Fri Dec 22 2017 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt17
+- Show the messages from PAM translated.
+- Stricter compatibility requirements for client libs.
+
 * Thu Nov 09 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt16
 - Fix: Properly report the PAM result before exit the password
   change session.
