@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt16.M80P.1
+Release: alt16.M80C.1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -289,8 +289,8 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
-* Wed Jan 17 2018 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt16.M80P.1
-- Build for p8.
+* Wed Jan 17 2018 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt16.M80C.1
+- Build for c8.
 
 * Fri Dec 22 2017 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt17
 - Show the messages from PAM translated.
