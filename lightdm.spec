@@ -329,7 +329,7 @@ fi
 * Tue Oct 03 2017 Michael Shigorin <mike@altlinux.org> 1.16.7-alt9
 - E2K: add -std=c++11 explicitly (for qt5-enabled build with lcc).
 
-* Tue Aug 08 2017 Michael Shigorin <mike@altlinux.org> 1.16.7-alt8
+* Wed Aug 09 2017 Michael Shigorin <mike@altlinux.org> 1.16.7-alt8
 - BOOTSTRAP: introduce systemd knob (on by default).
 - E2K: avoid problematic option.
 
