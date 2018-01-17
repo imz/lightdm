@@ -1,12 +1,13 @@
 %define _libexecdir %_prefix/libexec
 %define _localstatedir %_var
 %def_enable introspection
+%def_enable systemd
 %def_enable qt
 %def_enable qt5
 
 Name: lightdm
 Version: 1.16.7
-Release: alt6.M80P.1
+Release: alt16.M80P.1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -23,13 +24,15 @@ Source7: %name-greeter.pam
 Source8: %name.rules
 Source9: %name.service
 Source10: %name-login-unknown.control
+Source11: %name-greeter-hide-users.control
 
 Patch1: %name-%version-%release.patch
+Patch2: %name-%version-%release-advanced.patch
 
 # Requires: %name-greeter
 # Requires: accountsservice
 Requires: dbus-tools-gui
-Requires: dm-tool = %version-%release
+Requires: dm-tool = %EVR
 
 BuildRequires: gcc-c++ intltool
 BuildRequires: pkgconfig(glib-2.0) >= 2.30 pkgconfig(gio-2.0) >= 2.26  pkgconfig(gio-unix-2.0)  pkgconfig(xdmcp)  pkgconfig(xcb)
@@ -57,6 +60,8 @@ several toolkits, including HTML/CSS/Javascript.
 Group: System/Libraries
 Summary: LightDM GObject Greeter Library
 License: LGPLv2+
+Conflicts: %name < %EVR
+Conflicts: %name > %EVR
 
 %description -n liblightdm-gobject
 A library for LightDM greeters based on GObject which interfaces with LightDM
@@ -66,6 +71,8 @@ and provides common greeter functionality.
 Group: System/Libraries
 Summary: LightDM Qt Greeter Library
 License: LGPLv2+
+Conflicts: %name < %EVR
+Conflicts: %name > %EVR
 
 %description -n liblightdm-qt
 A library for LightDM greeters based on Qt which interfaces with LightDM and
@@ -75,6 +82,8 @@ provides common greeter functionality.
 Group: System/Libraries
 Summary: LightDM Qt5 Greeter Library
 License: LGPLv2+
+Conflicts: %name < %EVR
+Conflicts: %name > %EVR
 
 %description -n liblightdm-qt5
 A library for LightDM greeters based on Qt5 which interfaces with LightDM and
@@ -83,7 +92,7 @@ provides common greeter functionality.
 %package devel
 Group: Development/C
 Summary: Development Files for LightDM
-Requires: %name = %version-%release
+Requires: %name = %EVR
 
 %description devel
 This package provides all necessary files for developing plugins, greeters, and
@@ -94,6 +103,7 @@ Summary: Development package for %name
 Group: Development/Documentation
 BuildArch: noarch
 Conflicts: %name < %version
+Conflicts: %name > %version
 
 %description devel-doc
 Contains developer documentation for %name.
@@ -101,7 +111,7 @@ Contains developer documentation for %name.
 %package gir
 Summary: GObject introspection data for the %name
 Group: System/Libraries
-Requires: %name = %version-%release
+Requires: %name = %EVR
 
 %description gir
 GObject introspection data for the %name
@@ -110,7 +120,7 @@ GObject introspection data for the %name
 Summary: GObject introspection devel data for the %name
 Group: System/Libraries
 BuildArch: noarch
-Requires: %name-gir = %version-%release
+Requires: %name-gir = %EVR
 
 %description gir-devel
 GObject introspection devel data for the %name
@@ -119,6 +129,8 @@ GObject introspection devel data for the %name
 Summary: Display Manager control utility
 Group: Graphical desktop/Other
 License: GPLv3+
+Conflicts: %name < %EVR
+Conflicts: %name > %EVR
 
 %description -n dm-tool
 dm-tool utility controls a FreeDesktop.org-compatible display
@@ -127,6 +139,12 @@ manager via D-Bus.
 %prep
 %setup
 %patch1 -p1
+%patch2 -p1
+
+%ifarch e2k
+# until apx. lcc-1.23.01
+sed -i 's,-Werror=pointer-arith,,' configure.ac
+%endif
 
 %build
 %autoreconf
@@ -169,6 +187,10 @@ install -p -m 644 %SOURCE2 %buildroot%_sysconfdir/pam.d/%name
 install -p -m 644 %SOURCE3 %buildroot%_sysconfdir/pam.d/%name-autologin
 #install -p -m 644 %SOURCE7 %buildroot%_sysconfdir/pam.d/%name-greeter
 
+%if_disabled systemd
+sed -i '/pam_systemd.so/d' %buildroot%_sysconfdir/pam.d/%name-greeter
+%endif
+
 # install external hook for update_wms
 install -m755 %SOURCE4 %buildroot%_sysconfdir/X11/wms-methods.d/%name
 
@@ -181,6 +203,7 @@ install -m644 -p -D %SOURCE9 %buildroot%_unitdir/%name.service
 echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_environment
 
 install -m0755 -p -D %SOURCE10 %buildroot%_controldir/%name-login-unknown
+install -m0755 -p -D %SOURCE11 %buildroot%_controldir/%name-greeter-hide-users.control
 
 %find_lang --with-gnome %name
 
@@ -266,6 +289,50 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Fri Dec 22 2017 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt17
+- Show the messages from PAM translated.
+- Stricter compatibility requirements for client libs.
+
+* Thu Nov 09 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt16
+- Fix: Properly report the PAM result before exit the password
+  change session.
+
+* Tue Oct 31 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt14
+- Fix: Don\'t try to authenticate a user without using a greeter
+  on switch-to-user.
+
+* Mon Oct 30 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt13
+- Make use of 'default-username' when starting new login session.
+- Fixed syntax in lightdm-login-unknown.control.
+- Add 'default-username' to the global config too.
+- Add 'default-username' seat property.
+- Lookup 'login-unknown' first in the seat configuration, then in
+  the global section.
+- Added control for 'greeter-hide-users' configuration parameter.
+  
+* Tue Oct 24 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt12
+- Support the 'reset' argument of the CHANGE_PASS message. Use
+  "reset-pass-envvar" configuration parameter to set the environment
+  variable or set "PAM_RESET_AUTHTOK=1" by default.
+- Add "in_chauthtok" property.
+- Fix: Clean the 'cancelling' state when the session is complete.
+- Fix: Don\'t disconnect signals on cancel before the session
+  actually ends.
+
+* Thu Oct 19 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt11
+- Added 'lightdm_greeter_change_pass()' and 'CHANGE_PASS' greeter
+  message.
+
+* Wed Oct 04 2017 Michael Shigorin <mike@altlinux.org> 1.16.7-alt10
+- reverted last change, not needed anymore
+
+* Tue Oct 03 2017 Michael Shigorin <mike@altlinux.org> 1.16.7-alt9
+- E2K: add -std=c++11 explicitly (for qt5-enabled build with lcc).
+
+* Tue Aug 08 2017 Michael Shigorin <mike@altlinux.org> 1.16.7-alt8
+- BOOTSTRAP: introduce systemd knob (on by default).
+- E2K: avoid problematic option.
+
 * Wed Aug 09 2017 Paul Wolneykien <manowar@altlinux.org> 1.16.7-alt6.M80P.1
 - Build v1.16.7-alt7 for the P8 branch.
 
