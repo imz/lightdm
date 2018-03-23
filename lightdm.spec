@@ -289,6 +289,9 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Fri Mar 23 2018 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt17.M80P.0.M80C.1
+- Build for c8.
+
 * Fri Mar 23 2018 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt18
 - in "Remove X authority": Ignore any error & don't exit, continue
   closing the session (PAM etc.), otherwise the PAM sessiosn might be
