@@ -7,7 +7,7 @@
 
 Name: lightdm
 Version: 1.16.7
-Release: alt16.M80P.1
+Release: alt17.M80P.1
 Summary: Lightweight Display Manager
 Group: Graphical desktop/Other
 License: GPLv3+
@@ -203,7 +203,7 @@ install -m644 -p -D %SOURCE9 %buildroot%_unitdir/%name.service
 echo "GDK_CORE_DEVICE_EVENTS=true" > %buildroot%_localstatedir/lib/ldm/.pam_environment
 
 install -m0755 -p -D %SOURCE10 %buildroot%_controldir/%name-login-unknown
-install -m0755 -p -D %SOURCE11 %buildroot%_controldir/%name-greeter-hide-users.control
+install -m0755 -p -D %SOURCE11 %buildroot%_controldir/%name-greeter-hide-users
 
 %find_lang --with-gnome %name
 
@@ -289,6 +289,14 @@ fi
 %_man1dir/dm-tool.*
 
 %changelog
+* Fri Mar 23 2018 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt18
+- in "Remove X authority": Ignore any error & don't exit, continue
+  closing the session (PAM etc.), otherwise the PAM sessiosn might be
+  left open, resources not unmounted/freed, etc.
+
+* Mon Mar 12 2018 Fr. Br. George <george@altlinux.ru> 1.16.7-alt17.1
+- Fix lightdm-greeter-hide-users control filename
+
 * Wed Jan 17 2018 Ivan Zakharyaschev <imz@altlinux.org> 1.16.7-alt16.M80P.1
 - Build for p8.
 
